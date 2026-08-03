@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Check, ChevronDown, Clock3, Edit3, LayoutDashboard, Maximize2, Minimize2, Palette, Pin, Play, Plus, Settings, Square, StickyNote, TimerReset, Trash2 } from "lucide-react";
+import { Check, ChevronDown, Clock3, Edit3, LayoutDashboard, Maximize2, Minimize2, Palette, Pin, Play, Plus, Settings, Square, StickyNote, Trash2 } from "lucide-react";
 import { MiniBar } from "./components/MiniBar";
 import { EntryList } from "./features/entries/EntryList";
 import { useActiveTimer } from "./hooks/useActiveTimer";
@@ -11,8 +11,8 @@ import { api } from "./lib/api";
 import { isAppNoteCollapsed, noteTitle, withAppNoteCollapsed, withNoteTitle } from "./lib/noteMeta";
 import { insertHtmlAtSelection, normalizeStoredRichText, sanitizeClipboardHtml } from "./lib/richText";
 import { finishActiveTimer } from "./lib/timerActions";
-import { currentTime, formatDuration, isoToTimeInput, minutesBetween, normalizeDateInput, secondsToClock, todayDate } from "./lib/time";
-import type { ActiveTimer, EventType, PomodoroSession, StickyNote as Note, TimeEntry, TimeEntryInput, Todo, ViewKey } from "./lib/types";
+import { currentTime, formatDuration, isoToTimeInput, minutesBetween, normalizeDateInput, todayDate } from "./lib/time";
+import type { ActiveTimer, EventType, StickyNote as Note, TimeEntry, TimeEntryInput, ViewKey } from "./lib/types";
 import "./styles.css";
 
 const noteColors = ["#fff7c2", "#dbeafe", "#dcfce7", "#fde2e2", "#f3e8ff", "#f8fafc"];
@@ -20,8 +20,6 @@ const views: Array<{ key: ViewKey; label: string; icon: React.ReactNode }> = [
   { key: "today", label: "今日", icon: <LayoutDashboard size={18} /> },
   { key: "entries", label: "打卡记录", icon: <Clock3 size={18} /> },
   { key: "notes", label: "桌贴便签", icon: <StickyNote size={18} /> },
-  { key: "todos", label: "待办日程", icon: <Check size={18} /> },
-  { key: "pomodoro", label: "番茄钟", icon: <TimerReset size={18} /> },
   { key: "settings", label: "设置", icon: <Settings size={18} /> }
 ];
 
@@ -36,37 +34,13 @@ function App() {
   const [mini, setMini] = useState(false);
   const [status, setStatus] = useState("");
   const handleDataError = useCallback((message: string) => setStatus(message), []);
-  const { eventTypes, entries, notes, todos, sessions, refresh } = useAppData(handleDataError);
-  const [pomodoro, setPomodoro] = useState(0);
+  const { eventTypes, entries, notes, refresh } = useAppData(handleDataError);
   const [theme, setTheme] = useState(() => localStorage.getItem("timepast.theme") || "light");
   const [brightness, setBrightness] = useState(() => Number(localStorage.getItem("timepast.brightness") || "100"));
   const [miniAlwaysOnTop, setMiniAlwaysOnTop] = useState(() => localStorage.getItem("timepast.miniAlwaysOnTop") !== "false");
   const [miniEdgeHide, setMiniEdgeHide] = useState(() => localStorage.getItem("timepast.miniEdgeHide") === "true");
   const [miniOpacity, setMiniOpacity] = useState(() => Math.min(100, Math.max(45, Number(localStorage.getItem("timepast.miniOpacity") || "100"))));
-  const dueReminderIds = useRef(new Set<number>());
   const [activeTimer, setActiveTimer] = useActiveTimer();
-  useEffect(() => {
-    const checkDueTodos = () => {
-      const now = Date.now();
-      todos.filter((todo) => {
-        if (todo.completed || !todo.dueAt || dueReminderIds.current.has(todo.id)) return false;
-        const due = new Date(todo.dueAt).getTime();
-        return due <= now && now - due <= 15 * 60 * 1000;
-      }).forEach((todo) => {
-        dueReminderIds.current.add(todo.id);
-        api.notifyUser("TimePast 待办提醒", `“${todo.title}” 已到时间`).catch(() => undefined);
-        window.setTimeout(() => {
-          if (window.confirm(`“${todo.title}” 已到时间。现在去打卡吗？`)) {
-            startTodoTimer(todo);
-          }
-        }, 80);
-      });
-    };
-    checkDueTodos();
-    const interval = window.setInterval(checkDueTodos, 15_000);
-    return () => window.clearInterval(interval);
-  }, [todos, activeTimer, eventTypes]);
-
   useEffect(() => {
     let cancelled = false;
     api.setWindowMode(mini ? "mini" : "full")
@@ -77,12 +51,6 @@ function App() {
       .catch(() => undefined);
     return () => { cancelled = true; };
   }, [mini, miniAlwaysOnTop]);
-  useEffect(() => {
-    if (!pomodoro) return;
-    const interval = window.setInterval(() => setPomodoro((value) => Math.max(0, value - 1)), 1000);
-    return () => window.clearInterval(interval);
-  }, [pomodoro > 0]);
-
   useEffect(() => { localStorage.setItem("timepast.theme", theme); }, [theme]);
   useEffect(() => { localStorage.setItem("timepast.brightness", String(brightness)); }, [brightness]);
   useEffect(() => { localStorage.setItem("timepast.miniAlwaysOnTop", String(miniAlwaysOnTop)); }, [miniAlwaysOnTop]);
@@ -92,28 +60,6 @@ function App() {
   const activeEvents = eventTypes.filter((item) => !item.archived);
   const quickEvents = activeEvents.filter((item) => item.pinned);
   const startTimer = (event: EventType, note = "") => !activeTimer && setActiveTimer({ eventTypeId: event.id, eventName: event.name, eventColor: event.color, startedAt: new Date().toISOString(), note: note.trim() || undefined });
-  const startTodoTimer = (todo: Todo) => {
-    if (activeTimer) {
-      setView("entries");
-      setStatus("已有正在进行的打卡，请先结束后再开始待办。");
-      return;
-    }
-    const event = quickEvents[0] ?? activeEvents[0];
-    if (!event) {
-      setView("settings");
-      setStatus("请先创建一个事件类型，再开始待办打卡。");
-      return;
-    }
-    setActiveTimer({
-      eventTypeId: event.id,
-      eventName: event.name,
-      eventColor: event.color,
-      startedAt: new Date().toISOString(),
-      note: `待办：${todo.title}${todo.note ? `\n${todo.note}` : ""}`
-    });
-    setView("entries");
-    setStatus(`“${todo.title}”已开始计时，结束时会自动写入打卡记录。`);
-  };
   const createNote = async (desktop = false) => {
     const id = await api.saveNote({ content: "", color: noteColors[notes.length % noteColors.length], x: 80, y: 80, width: 320, height: 280, collapsed: false, pinned: false, fontSize: 15, styleJson: "{}" });
     await refresh();
@@ -129,11 +75,10 @@ function App() {
 
   useEffect(() => {
     const noteListener = listen("tray-new-note", () => { createNote(true).catch((error) => setStatus(String(error))); });
-    const pomodoroListener = listen("tray-start-pomodoro", () => { setPomodoro((value) => value || 25 * 60); setMini(true); });
-    return () => { noteListener.then((off) => off()).catch(() => undefined); pomodoroListener.then((off) => off()).catch(() => undefined); };
+    return () => { noteListener.then((off) => off()).catch(() => undefined); };
   }, [notes.length]);
 
-  if (mini) return <MiniBar events={quickEvents.length ? quickEvents : activeEvents} activeTimer={activeTimer} pomodoro={pomodoro} alwaysOnTop={miniAlwaysOnTop} edgeHide={miniEdgeHide} opacity={miniOpacity} onAlwaysOnTopChange={setMiniAlwaysOnTop} onEdgeHideChange={setMiniEdgeHide} onOpacityChange={setMiniOpacity} onStart={startTimer} onStop={() => activeTimer && finishActiveTimer(activeTimer, setActiveTimer, refresh, setStatus)} onNote={() => createNote(true)} onPomodoro={() => setPomodoro((value) => value ? 0 : 25 * 60)} onAddEvent={addQuickEvent} onExpand={() => setMini(false)} />;
+  if (mini) return <MiniBar events={quickEvents.length ? quickEvents : activeEvents} activeTimer={activeTimer} alwaysOnTop={miniAlwaysOnTop} edgeHide={miniEdgeHide} opacity={miniOpacity} onAlwaysOnTopChange={setMiniAlwaysOnTop} onEdgeHideChange={setMiniEdgeHide} onOpacityChange={setMiniOpacity} onStart={startTimer} onStop={() => activeTimer && finishActiveTimer(activeTimer, setActiveTimer, refresh, setStatus)} onNote={() => createNote(true)} onAddEvent={addQuickEvent} onExpand={() => setMini(false)} />;
 
   return <div className="app" data-theme={theme} style={{ filter: `brightness(${brightness}%)` }}>
     <aside className="sidebar">
@@ -143,23 +88,21 @@ function App() {
       <div className="timer-card"><span className="muted">当前打卡</span>{activeTimer ? <><strong style={{ color: activeTimer.eventColor }}>{activeTimer.eventName}</strong><span>{isoToTimeInput(activeTimer.startedAt)} 开始</span><button className="primary" onClick={() => finishActiveTimer(activeTimer, setActiveTimer, refresh, setStatus)}><Square size={15} />结束并保存</button></> : <><strong>未开始</strong><span>从常用事件快速启动</span></>}</div>
     </aside>
     <main className="main">
-      <header className="topbar"><div><h1>{views.find((item) => item.key === view)?.label}</h1><p>{status || "记录时间、整理便签、安排提醒，数据只保存在本机。"}</p></div><div className="quick-events">{quickEvents.map((item) => <button className="chip" key={item.id} disabled={!!activeTimer} onClick={() => startTimer(item)}><span style={{ background: item.color }} />{item.name}</button>)}<button onClick={() => setMini(true)}><Minimize2 size={16} />小条</button></div></header>
-      {view === "today" && <TodayView entries={entries} notes={notes} todos={todos} events={quickEvents} setView={setView} />}
+      <header className="topbar"><div><h1>{views.find((item) => item.key === view)?.label}</h1><p>{status || "记录时间、整理便签，数据只保存在本机。"}</p></div><div className="quick-events">{quickEvents.map((item) => <button className="chip" key={item.id} disabled={!!activeTimer} onClick={() => startTimer(item)}><span style={{ background: item.color }} />{item.name}</button>)}<button onClick={() => setMini(true)}><Minimize2 size={16} />小条</button></div></header>
+      {view === "today" && <TodayView entries={entries} notes={notes} events={quickEvents} setView={setView} />}
       {view === "entries" && <EntriesView events={activeEvents} entries={entries} activeTimer={activeTimer} setActiveTimer={setActiveTimer} refresh={refresh} setStatus={setStatus} />}
       {view === "notes" && <NotesView notes={notes} refresh={refresh} createNote={createNote} setStatus={setStatus} />}
-      {view === "todos" && <TodosView todos={todos} refresh={refresh} setView={setView} setStatus={setStatus} />}
-      {view === "pomodoro" && <PomodoroView events={activeEvents} sessions={sessions} refresh={refresh} setStatus={setStatus} />}
       {view === "settings" && <SettingsView events={eventTypes} refresh={refresh} theme={theme} setTheme={setTheme} brightness={brightness} setBrightness={setBrightness} setStatus={setStatus} />}
     </main>
   </div>;
 }
 
-function TodayView({ entries, notes, todos, events, setView }: { entries: TimeEntry[]; notes: Note[]; todos: Todo[]; events: EventType[]; setView: (value: ViewKey) => void }) {
+function TodayView({ entries, notes, events, setView }: { entries: TimeEntry[]; notes: Note[]; events: EventType[]; setView: (value: ViewKey) => void }) {
   const [selectedDate, setSelectedDate] = useState(todayDate());
   const selectedEntries = entries.filter((item) => item.entryDate === selectedDate);
   const total = selectedEntries.reduce((sum, item) => sum + Math.max(0, minutesBetween(item.startTime, item.endTime)), 0);
   const isToday = selectedDate === todayDate();
-  return <section className="grid today-grid"><div className="panel wide"><div className="panel-head"><div><h2>{isToday ? "今日时间" : "历史记录"}</h2><label className="history-date">查看日期<input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} /></label></div><button onClick={() => setView("entries")}><Plus size={16} />记录</button></div><div className="metric-row"><div><strong>{formatDuration(total)}</strong><span>已记录</span></div><div><strong>{selectedEntries.length}</strong><span>时间段</span></div><div><strong>{events.length}</strong><span>快捷事件</span></div></div><EntryList entries={selectedEntries} compact /></div><div className="panel"><div className="panel-head"><h2>待办提醒</h2><button onClick={() => setView("todos")}>管理</button></div>{todos.filter((item) => !item.completed).slice(0, 5).map((item) => <div className="mini-row" key={item.id}><span className={`priority-dot priority-${item.priority}`} /><span>{item.title}</span><small>{({ urgent: "紧急", high: "高", normal: "普通", low: "低" }[item.priority])}{item.note ? ` · ${item.note}` : ""}</small></div>)}</div><div className="panel"><div className="panel-head"><h2>便签预览</h2><button onClick={() => setView("notes")}>打开</button></div>{notes.slice(0, 4).map((item) => <div className="note-preview" key={item.id} style={{ background: item.color }}>{plainText(item.content)}</div>)}</div></section>;
+  return <section className="grid today-grid"><div className="panel wide"><div className="panel-head"><div><h2>{isToday ? "今日时间" : "历史记录"}</h2><label className="history-date">查看日期<input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} /></label></div><button onClick={() => setView("entries")}><Plus size={16} />记录</button></div><div className="metric-row"><div><strong>{formatDuration(total)}</strong><span>已记录</span></div><div><strong>{selectedEntries.length}</strong><span>时间段</span></div><div><strong>{events.length}</strong><span>快捷事件</span></div></div><EntryList entries={selectedEntries} compact /></div><div className="panel"><div className="panel-head"><h2>便签预览</h2><button onClick={() => setView("notes")}>打开</button></div>{notes.slice(0, 4).map((item) => <div className="note-preview" key={item.id} style={{ background: item.color }}>{plainText(item.content)}</div>)}</div></section>;
 }
 
 function EntriesView({ events, entries, activeTimer, setActiveTimer, refresh, setStatus }: { events: EventType[]; entries: TimeEntry[]; activeTimer: ActiveTimer | null; setActiveTimer: (value: ActiveTimer | null) => void; refresh: () => Promise<void>; setStatus: (value: string) => void }) {
@@ -245,48 +188,7 @@ function NoteCard({ note, refresh, setStatus }: { note: Note; refresh: () => Pro
     line.remove();
     persist({ content: editorRef.current?.innerHTML || "" }, 0);
   };
-  return <article className="sticky" style={{ background: note.color, width: note.width, minHeight: isAppNoteCollapsed(note) ? 112 : note.height }}><div className="sticky-head"><label className="sticky-title-wrap"><input value={title} onChange={(event) => setTitle(event.target.value)} onBlur={() => persist({ styleJson: withNoteTitle(localRef.current, title) }, 0)} placeholder="便签名称" aria-label="便签名称" /></label><div className="sticky-actions"><button onClick={() => persist({ pinned: !note.pinned }, 0)} title="置顶"><Pin size={15} className={note.pinned ? "filled" : ""} /></button><button onClick={() => persist({ styleJson: withAppNoteCollapsed(note, !isAppNoteCollapsed(note)) }, 0)} title="收缩应用内便签"><ChevronDown size={15} /></button><button onClick={() => api.openNoteWindow(note.id).then(() => setStatus("桌面便签已打开"))} title="打开桌面窗口"><Maximize2 size={15} /></button><button onClick={async () => { const title = plainText(editorRef.current?.innerHTML || note.content); if (title) { await api.saveTodo({ title, note: "", completed: false, dueAt: null, repeatRule: "none", priority: "normal", sortOrder: 0, linkedNoteId: note.id }); setStatus("已从便签创建待办"); } }} title="生成待办"><Check size={15} /></button><button onClick={async () => { await api.deleteNote(note.id); await refresh(); }} title="删除"><Trash2 size={15} /></button></div></div>{!isAppNoteCollapsed(note) && <><div ref={editorRef} className="sticky-editor rich-editor" contentEditable suppressContentEditableWarning data-placeholder="点击这里编辑便签" style={{ fontSize: note.fontSize }} onFocus={() => { editingRef.current = true; }} onBlur={() => { editingRef.current = false; persist({ content: editorRef.current?.innerHTML || "" }); }} onKeyDown={handleTodoBackspace} onPaste={handlePaste} onMouseUp={rememberSelection} onKeyUp={rememberSelection} onInput={() => persist({ content: editorRef.current?.innerHTML || "" })} onClick={(event) => { const check = (event.target as HTMLElement).closest(".todo-check"); if (check) { check.classList.toggle("checked"); persist({ content: editorRef.current?.innerHTML || "" }, 0); } }} /><div className="sticky-tools">{noteColors.map((color) => <button key={color} className="swatch" style={{ background: color }} onClick={() => persist({ color }, 0)} />)}<button onClick={() => persist({ fontSize: Math.max(12, note.fontSize - 1) }, 0)}>A-</button><button onClick={() => persist({ fontSize: Math.min(24, note.fontSize + 1) }, 0)}>A+</button><button onMouseDown={preserve} onClick={() => format("bold")} title="加粗">B</button><button onMouseDown={preserve} onClick={() => format("hiliteColor", "#fff59d")} title="标注"><Edit3 size={14} /></button><label className="font-color" title="字体颜色"><Palette size={14} /><input type="color" value={fontColor} onMouseDown={preserve} onChange={(event) => { setFontColor(event.target.value); format("foreColor", event.target.value); }} /></label><button onMouseDown={preserve} onClick={addTodoLine} title="另起一行添加待办"><Check size={14} /></button></div></>}</article>;
-}
-
-function TodosView({ todos, refresh, setView, setStatus }: { todos: Todo[]; refresh: () => Promise<void>; setView: (value: ViewKey) => void; setStatus: (value: string) => void }) {
-  const [title, setTitle] = useState("");
-  const [note, setNote] = useState("");
-  const [dueAt, setDueAt] = useState("");
-  const [rule, setRule] = useState("none");
-  const [priority, setPriority] = useState<Todo["priority"]>("normal");
-  const [sortBy, setSortBy] = useState<"priority" | "due" | "manual">("priority");
-  const [editing, setEditing] = useState<Todo | null>(null);
-  const priorityLabel: Record<Todo["priority"], string> = { urgent: "紧急", high: "高", normal: "普通", low: "低" };
-  const ordered = useMemo(() => [...todos].sort((left, right) => {
-    if (sortBy === "manual") return left.sortOrder - right.sortOrder;
-    if (sortBy === "due") return (left.dueAt || "9999").localeCompare(right.dueAt || "9999");
-    const rank = { urgent: 0, high: 1, normal: 2, low: 3 };
-    return rank[left.priority] - rank[right.priority] || left.sortOrder - right.sortOrder;
-  }), [todos, sortBy]);
-  const create = async () => {
-    if (!title.trim()) return;
-    await api.saveTodo({ title, note, completed: false, dueAt: dueAt || null, repeatRule: rule, priority, sortOrder: todos.length + 1, linkedNoteId: null });
-    setTitle(""); setNote(""); setDueAt(""); setPriority("normal"); await refresh(); setStatus("待办已保存");
-  };
-  const saveEdit = async () => { if (!editing) return; await api.saveTodo(editing); setEditing(null); await refresh(); setStatus("待办已更新"); };
-  const move = async (id: number, direction: -1 | 1) => {
-    const index = ordered.findIndex((item) => item.id === id); const target = index + direction;
-    if (target < 0 || target >= ordered.length) return;
-    const next = [...ordered]; [next[index], next[target]] = [next[target], next[index]];
-    await Promise.all(next.map((item, order) => api.saveTodo({ ...item, sortOrder: order + 1 })));
-    await refresh();
-  };
-  return <section className="grid todo-grid">
-    <div className="panel todo-form"><div className="panel-head"><h2>新增待办</h2><span className="badge">本地提醒</span></div><label>标题<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="需要完成的事情" /></label><label>备注<textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="补充说明，可留空" /></label><label>时间<input type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} /></label><label>紧急程度<select value={priority} onChange={(event) => setPriority(event.target.value as Todo["priority"])}><option value="urgent">紧急 - 红色</option><option value="high">高 - 橙色</option><option value="normal">普通 - 蓝色</option><option value="low">低 - 灰色</option></select></label><label>重复<select value={rule} onChange={(event) => setRule(event.target.value)}><option value="none">不重复</option><option value="daily">每天</option><option value="weekly:1,2,3,4,5">每周工作日</option><option value="monthly">每月同日</option></select></label><button className="primary" onClick={create}><Plus size={16} />保存待办</button></div>
-    <div className="panel wide"><div className="panel-head"><h2>日程与待办</h2><select className="sort-select" value={sortBy} onChange={(event) => setSortBy(event.target.value as typeof sortBy)}><option value="priority">按紧急程度</option><option value="due">按到期时间</option><option value="manual">手动排序</option></select></div><div className="todo-list">{ordered.map((item, index) => editing?.id === item.id ? <div className="todo-edit" key={item.id}><input value={editing.title} onChange={(event) => setEditing({ ...editing, title: event.target.value })} /><textarea value={editing.note} onChange={(event) => setEditing({ ...editing, note: event.target.value })} placeholder="备注" /><input type="datetime-local" value={editing.dueAt || ""} onChange={(event) => setEditing({ ...editing, dueAt: event.target.value || null })} /><select value={editing.priority} onChange={(event) => setEditing({ ...editing, priority: event.target.value as Todo["priority"] })}><option value="urgent">紧急</option><option value="high">高</option><option value="normal">普通</option><option value="low">低</option></select><button className="primary" onClick={saveEdit}>保存</button><button onClick={() => setEditing(null)}>取消</button></div> : <div className={item.completed ? "todo-row done" : "todo-row"} key={item.id}><button title="完成" onClick={async () => { await api.saveTodo({ ...item, completed: !item.completed }); await refresh(); }}><Check size={16} /></button><span className={`priority-dot priority-${item.priority}`} title={priorityLabel[item.priority]} /><div className="todo-content"><strong>{item.title}</strong>{item.note && <small>{item.note}</small>}</div><small>{item.dueAt?.replace("T", " ") || "无时间"}</small><em>{priorityLabel[item.priority]}</em><button title="编辑待办" onClick={() => setEditing(item)}><Edit3 size={15} /></button>{sortBy === "manual" && <><button title="上移" disabled={index === 0} onClick={() => move(item.id, -1)}>↑</button><button title="下移" disabled={index === ordered.length - 1} onClick={() => move(item.id, 1)}>↓</button></>}<button title="删除待办" className="danger-icon" onClick={async () => { await api.deleteTodo(item.id); await refresh(); }}><Trash2 size={15} /></button></div>)}</div></div>
-  </section>;
-}
-function PomodoroView({ events, sessions, refresh, setStatus }: { events: EventType[]; sessions: PomodoroSession[]; refresh: () => Promise<void>; setStatus: (value: string) => void }) {
-  const [minutes, setMinutes] = useState(25); const [remaining, setRemaining] = useState(1500); const [running, setRunning] = useState(false); const [eventTypeId, setEventTypeId] = useState(events[0]?.id || 1); const startedRef = useRef<string | null>(null);
-  useEffect(() => setRemaining(minutes * 60), [minutes]);
-  useEffect(() => { if (!running) return; const id = window.setInterval(() => setRemaining((value) => value > 1 ? value - 1 : 0), 1000); return () => window.clearInterval(id); }, [running]);
-  useEffect(() => { if (remaining !== 0 || !running) return; setRunning(false); api.savePomodoroSession({ durationMinutes: minutes, breakMinutes: 5, status: "completed", linkedTimeEntryId: null }).then(refresh); setStatus("番茄钟完成"); }, [remaining, running]);
-  return <section className="grid pomodoro-grid"><div className="panel pomodoro-panel"><div className="timer-circle"><span>{secondsToClock(remaining)}</span><small>{running ? "专注中" : "准备开始"}</small></div><label>专注分钟<input type="number" min={5} max={90} value={minutes} onChange={(event) => setMinutes(Number(event.target.value))} /></label><label>事件<select value={eventTypeId} onChange={(event) => setEventTypeId(Number(event.target.value))}>{events.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><div className="button-row"><button className="primary" onClick={() => { startedRef.current ||= new Date().toISOString(); setRunning(true); }}><Play size={16} />开始</button><button onClick={() => setRunning(false)}>暂停</button><button onClick={() => { setRunning(false); setRemaining(minutes * 60); startedRef.current = null; }}>重置</button></div></div><div className="panel wide"><div className="mini-list">{sessions.map((item) => <div className="mini-row" key={item.id}><TimerReset size={15} /><span>{item.durationMinutes} 分钟专注</span></div>)}</div></div></section>;
+  return <article className="sticky" style={{ background: note.color, width: note.width, minHeight: isAppNoteCollapsed(note) ? 112 : note.height }}><div className="sticky-head"><label className="sticky-title-wrap"><input value={title} onChange={(event) => setTitle(event.target.value)} onBlur={() => persist({ styleJson: withNoteTitle(localRef.current, title) }, 0)} placeholder="便签名称" aria-label="便签名称" /></label><div className="sticky-actions"><button onClick={() => persist({ pinned: !note.pinned }, 0)} title="置顶"><Pin size={15} className={note.pinned ? "filled" : ""} /></button><button onClick={() => persist({ styleJson: withAppNoteCollapsed(note, !isAppNoteCollapsed(note)) }, 0)} title="收缩应用内便签"><ChevronDown size={15} /></button><button onClick={() => api.openNoteWindow(note.id).then(() => setStatus("桌面便签已打开"))} title="打开桌面窗口"><Maximize2 size={15} /></button><button onClick={async () => { await api.deleteNote(note.id); await refresh(); }} title="删除"><Trash2 size={15} /></button></div></div>{!isAppNoteCollapsed(note) && <><div ref={editorRef} className="sticky-editor rich-editor" contentEditable suppressContentEditableWarning data-placeholder="点击这里编辑便签" style={{ fontSize: note.fontSize }} onFocus={() => { editingRef.current = true; }} onBlur={() => { editingRef.current = false; persist({ content: editorRef.current?.innerHTML || "" }); }} onKeyDown={handleTodoBackspace} onPaste={handlePaste} onMouseUp={rememberSelection} onKeyUp={rememberSelection} onInput={() => persist({ content: editorRef.current?.innerHTML || "" })} onClick={(event) => { const check = (event.target as HTMLElement).closest(".todo-check"); if (check) { check.classList.toggle("checked"); persist({ content: editorRef.current?.innerHTML || "" }, 0); } }} /><div className="sticky-tools">{noteColors.map((color) => <button key={color} className="swatch" style={{ background: color }} onClick={() => persist({ color }, 0)} />)}<button onClick={() => persist({ fontSize: Math.max(12, note.fontSize - 1) }, 0)}>A-</button><button onClick={() => persist({ fontSize: Math.min(24, note.fontSize + 1) }, 0)}>A+</button><button onMouseDown={preserve} onClick={() => format("bold")} title="加粗">B</button><button onMouseDown={preserve} onClick={() => format("hiliteColor", "#fff59d")} title="标注"><Edit3 size={14} /></button><label className="font-color" title="字体颜色"><Palette size={14} /><input type="color" value={fontColor} onMouseDown={preserve} onChange={(event) => { setFontColor(event.target.value); format("foreColor", event.target.value); }} /></label><button onMouseDown={preserve} onClick={addTodoLine} title="另起一行添加待办"><Check size={14} /></button></div></>}</article>;
 }
 
 function SettingsView({ events, refresh, theme, setTheme, brightness, setBrightness, setStatus }: { events: EventType[]; refresh: () => Promise<void>; theme: string; setTheme: (value: string) => void; brightness: number; setBrightness: (value: number) => void; setStatus: (value: string) => void }) {

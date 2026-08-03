@@ -1,4 +1,4 @@
-export type ViewKey = "today" | "entries" | "notes" | "todos" | "pomodoro" | "settings";
+export type ViewKey = "today" | "entries" | "notes" | "settings";
 
 export interface EventType {
   id: number;
@@ -60,42 +60,6 @@ export interface StickyNoteInput {
   pinned: boolean;
   fontSize: number;
   styleJson: string;
-}
-
-export type TodoPriority = "urgent" | "high" | "normal" | "low";
-
-export interface Todo {
-  id: number;
-  title: string;
-  note: string;
-  completed: boolean;
-  dueAt?: string | null;
-  repeatRule: string;
-  priority: TodoPriority;
-  sortOrder: number;
-  linkedNoteId?: number | null;
-  createdAt: string;
-}
-
-export interface TodoInput {
-  id?: number;
-  title: string;
-  note: string;
-  completed: boolean;
-  dueAt?: string | null;
-  repeatRule: string;
-  priority: TodoPriority;
-  sortOrder: number;
-  linkedNoteId?: number | null;
-}
-
-export interface PomodoroSession {
-  id: number;
-  startedAt: string;
-  durationMinutes: number;
-  breakMinutes: number;
-  status: string;
-  linkedTimeEntryId?: number | null;
 }
 
 export interface ActiveTimer {

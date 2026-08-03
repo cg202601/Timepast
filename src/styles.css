@@ -242,8 +242,6 @@ h3 {
 
 .today-grid,
 .entry-grid,
-.todo-grid,
-.pomodoro-grid,
 .settings-grid {
   grid-template-columns: minmax(320px, 0.9fr) minmax(520px, 1.5fr);
 }
@@ -273,7 +271,6 @@ h3 {
 }
 
 .entry-form,
-.todo-grid .panel:first-child,
 .settings-grid .panel:first-child {
   align-self: start;
   display: grid;
@@ -335,9 +332,7 @@ h3 {
 }
 
 .entry-row,
-.todo-row,
-.event-row,
-.mini-row {
+.event-row {
   display: grid;
   align-items: center;
   gap: 10px;
@@ -364,32 +359,10 @@ h3 {
   text-overflow: ellipsis;
 }
 
-.mini-list,
-.todo-list,
 .event-list,
 .note-preview-list {
   display: grid;
   gap: 10px;
-}
-
-.mini-row {
-  grid-template-columns: auto 1fr auto;
-}
-
-.mini-row small,
-.todo-row small,
-.todo-row em {
-  color: #8a96aa;
-  font-style: normal;
-}
-
-.todo-row {
-  grid-template-columns: auto 1fr 180px 120px auto;
-}
-
-.todo-row.done span {
-  color: #8a96aa;
-  text-decoration: line-through;
 }
 
 .event-row {
@@ -481,32 +454,6 @@ h3 {
   fill: currentColor;
 }
 
-.pomodoro-panel {
-  display: grid;
-  gap: 16px;
-}
-
-.timer-circle {
-  width: 260px;
-  height: 260px;
-  margin: 10px auto;
-  border-radius: 999px;
-  background: radial-gradient(circle at 35% 25%, #ffffff, #dbeafe 48%, #2563eb 49%, #1d4ed8);
-  display: grid;
-  place-items: center;
-  align-content: center;
-  color: #10213c;
-}
-
-.timer-circle span {
-  font-size: 46px;
-  font-weight: 800;
-}
-
-.timer-circle small {
-  color: #516079;
-}
-
 .empty {
   min-height: 112px;
   display: grid;
@@ -526,8 +473,6 @@ h3 {
 
   .today-grid,
   .entry-grid,
-  .todo-grid,
-  .pomodoro-grid,
   .settings-grid {
     grid-template-columns: 1fr;
   }
@@ -540,7 +485,7 @@ h3 {
   min-width: 520px;
   min-height: 48px;
   display: grid;
-  grid-template-columns: 28px 104px minmax(72px, 1fr) repeat(6, 36px);
+  grid-template-columns: 28px 104px minmax(72px, 1fr) repeat(5, 36px);
   align-items: center;
   gap: 6px;
   padding: 6px 8px;
@@ -1101,54 +1046,6 @@ body.note-window-page .desktop-note {
   background: #eff6ff;
 }
 
-.todo-row {
-  grid-template-columns: auto 10px minmax(160px, 1fr) 150px 56px auto auto auto auto;
-}
-
-.todo-content {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-}
-
-.todo-content strong,
-.todo-content small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.priority-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-}
-
-.priority-urgent { background: #dc2626; box-shadow: 0 0 0 3px #fee2e2; }
-.priority-high { background: #ea580c; box-shadow: 0 0 0 3px #ffedd5; }
-.priority-normal { background: #2563eb; box-shadow: 0 0 0 3px #dbeafe; }
-.priority-low { background: #64748b; box-shadow: 0 0 0 3px #e2e8f0; }
-
-.todo-edit {
-  display: grid;
-  grid-template-columns: 1.2fr 1.5fr 1fr 0.8fr auto auto;
-  gap: 8px;
-  align-items: center;
-  padding: 10px;
-  border: 1px solid #93b4e8;
-  border-radius: 8px;
-  background: #f8fbff;
-}
-
-.todo-edit textarea { min-height: 42px; padding: 8px; }
-.sort-select { width: auto; min-width: 150px; padding: 8px 10px; }
-
-@media (max-width: 960px) {
-  .todo-row { grid-template-columns: auto 10px minmax(120px, 1fr) auto auto auto; }
-  .todo-row > small, .todo-row > em { display: none; }
-  .todo-edit { grid-template-columns: 1fr 1fr; }
-}
-
 /* Main window must remain usable below its initial height. */
 .app { height: 100vh; min-height: 0; overflow: hidden; }
 .main { min-height: 0; height: 100vh; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; }
@@ -1170,7 +1067,7 @@ body.note-window-page .desktop-note {
 .app[data-theme="night"] { background: #1e2633; color: #e7edf5; }
 .app[data-theme="night"] .main { background: #202936; }
 .app[data-theme="night"] .topbar p, .app[data-theme="night"] .muted { color: #aab7c8; }
-.app[data-theme="night"] .panel, .app[data-theme="night"] .entry-row, .app[data-theme="night"] .todo-row, .app[data-theme="night"] .event-row, .app[data-theme="night"] .mini-row { background: #2a3443; border-color: #3b485b; color: #e7edf5; }
+.app[data-theme="night"] .panel, .app[data-theme="night"] .entry-row, .app[data-theme="night"] .event-row { background: #2a3443; border-color: #3b485b; color: #e7edf5; }
 .app[data-theme="night"] input, .app[data-theme="night"] select, .app[data-theme="night"] textarea, .app[data-theme="night"] button:not(.primary) { background: #313d4e; border-color: #46556a; color: #e7edf5; }
 
 .app[data-theme="tech"] .main { background: #edf5fb; }
@@ -1212,7 +1109,6 @@ body.note-window-page .desktop-note {
 .app[data-theme="night"] .metric-row strong { color: #f8fafc; }
 .app[data-theme="night"] .metric-row span { color: #cbd5e1; }
 .app[data-theme="night"] .entry-row em,
-.app[data-theme="night"] .mini-row small { color: #cbd5e1; }
 
 /* The fixed desktop webview rule is more specific than the generic note rule. */
 body.note-window-page .desktop-note.collapsed {

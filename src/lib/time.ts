@@ -43,9 +43,3 @@ export function formatDuration(minutes: number): string {
   const m = minutes % 60;
   return m ? `${h} 小时 ${m} 分钟` : `${h} 小时`;
 }
-
-export function secondsToClock(total: number): string {
-  const minutes = Math.floor(total / 60).toString().padStart(2, "0");
-  const seconds = Math.max(0, total % 60).toString().padStart(2, "0");
-  return `${minutes}:${seconds}`;
-}

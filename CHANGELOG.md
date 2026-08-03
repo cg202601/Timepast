@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.1.8 - 2026-08-03
+
+### Removed
+- Removed the unused todo/schedule and Pomodoro features, including their menus, tray actions, local APIs, storage commands, and notification dependency.
+
+### Changed
+- Simplified the product to local time entries and smart sticky notes.
+
 ## v0.1.4 - 2026-07-20
 
 ### Fixed

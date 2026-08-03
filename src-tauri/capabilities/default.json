@@ -14,7 +14,5 @@
     "core:window:allow-set-size",
     "core:window:allow-set-position",
     "core:window:allow-set-always-on-top",
-    "core:event:default",
-    "notification:default"
-  ]
+    "core:event:default"]
 }

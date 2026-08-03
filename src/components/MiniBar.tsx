@@ -1,21 +1,20 @@
 import React, { useEffect, useRef, useState } from "react";
 import { currentMonitor, getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
-import { Check, Maximize2, Pin, Play, Plus, Square, StickyNote, TimerReset } from "lucide-react";
+import { Check, Maximize2, Pin, Play, Plus, Square, StickyNote } from "lucide-react";
 import { api } from "../lib/api";
-import { secondsToClock } from "../lib/time";
 import type { ActiveTimer, EventType } from "../lib/types";
 
 type MiniBarProps = {
-  events: EventType[]; activeTimer: ActiveTimer | null; pomodoro: number; alwaysOnTop: boolean; edgeHide: boolean; opacity: number;
+  events: EventType[]; activeTimer: ActiveTimer | null; alwaysOnTop: boolean; edgeHide: boolean; opacity: number;
   onAlwaysOnTopChange: (value: boolean) => void; onEdgeHideChange: (value: boolean) => void; onOpacityChange: (value: number) => void;
-  onStart: (event: EventType, note: string) => void; onStop: () => void; onNote: () => void; onPomodoro: () => void; onAddEvent: (name: string) => Promise<number>; onExpand: () => void;
+  onStart: (event: EventType, note: string) => void; onStop: () => void; onNote: () => void; onAddEvent: (name: string) => Promise<number>; onExpand: () => void;
 };
 type Edge = "top" | "right" | "bottom" | "left";
 type WorkArea = { x: number; y: number; width: number; height: number };
 const edgeThreshold = 18;
 const revealSize = 14;
 
-export function MiniBar({ events, activeTimer, pomodoro, alwaysOnTop, edgeHide, opacity, onAlwaysOnTopChange, onEdgeHideChange, onOpacityChange, onStart, onStop, onNote, onPomodoro, onAddEvent, onExpand }: MiniBarProps) {
+export function MiniBar({ events, activeTimer, alwaysOnTop, edgeHide, opacity, onAlwaysOnTopChange, onEdgeHideChange, onOpacityChange, onStart, onStop, onNote, onAddEvent, onExpand }: MiniBarProps) {
   const [selectedId, setSelectedId] = useState(0);
   const [note, setNote] = useState("");
   const [adding, setAdding] = useState(false);
@@ -121,7 +120,6 @@ export function MiniBar({ events, activeTimer, pomodoro, alwaysOnTop, edgeHide, 
     {adding ? <button className="primary" title="保存事件" onClick={() => void saveNewEvent()}><Check size={15} /></button> : <button title="添加事件" onClick={() => setAdding(true)} disabled={!!activeTimer}><Plus size={15} /></button>}
     {activeTimer ? <button className="danger" title="结束打卡" onClick={onStop}><Square size={15} /></button> : <button className="primary" title="开始打卡" disabled={!selected || adding} onClick={() => selected && onStart(selected, note)}><Play size={15} /></button>}
     <button title="新建桌面便签" onClick={onNote}><StickyNote size={15} /></button>
-    <button title="番茄钟" onClick={onPomodoro}><TimerReset size={15} />{pomodoro ? secondsToClock(pomodoro) : ""}</button>
     <button className={alwaysOnTop ? "active" : ""} title={alwaysOnTop ? "取消小条置顶" : "小条置顶"} onClick={() => onAlwaysOnTopChange(!alwaysOnTop)}><Pin size={15} className={alwaysOnTop ? "filled" : ""} /></button>
     <button title="展开主程序" onClick={onExpand}><Maximize2 size={15} /></button>
     {menuOpen && <div className="mini-context-menu" role="menu" onMouseDown={(event) => event.stopPropagation()}><label>透明度<input type="range" min="45" max="100" value={opacity} onChange={(event) => onOpacityChange(Number(event.target.value))} /></label><label><input type="checkbox" checked={edgeHide} onChange={(event) => onEdgeHideChange(event.target.checked)} />贴边隐藏</label><button type="button" onClick={() => setMenuOpen(false)}>完成</button></div>}

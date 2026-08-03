@@ -12,19 +12,11 @@ use tauri::{
     AppHandle, Emitter, Listener, LogicalSize, Manager, PhysicalPosition,
     Position, Size, State, WindowEvent,
 };
-use tauri_plugin_notification::NotificationExt;
 use thiserror::Error;
 
 
-type Db = Arc<Mutex<Connection>>;
-
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
-struct WindowGeometry {
-    x: i32,
-    y: i32,
-    width: u32,
-    height: u32,
-}
+struct WindowGeometry { x: i32, y: i32, width: u32, height: u32 }
 
 #[derive(Debug, Error)]
 enum AppError {
@@ -38,133 +30,30 @@ enum AppError {
 
 impl serde::Serialize for AppError {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(&self.to_string())
-    }
+    where S: serde::Serializer,
+    { serializer.serialize_str(&self.to_string()) }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct EventType {
-    id: i64,
-    name: String,
-    color: String,
-    sort_order: i64,
-    pinned: bool,
-    archived: bool,
-}
+struct EventType { id: i64, name: String, color: String, sort_order: i64, pinned: bool, archived: bool }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct TimeEntry {
-    id: i64,
-    entry_date: String,
-    start_time: String,
-    end_time: String,
-    event_type_id: i64,
-    event_name: String,
-    event_color: String,
-    note: String,
-    source_mode: String,
-    created_at: String,
-}
+struct TimeEntry { id: i64, entry_date: String, start_time: String, end_time: String, event_type_id: i64, event_name: String, event_color: String, note: String, source_mode: String, created_at: String }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct TimeEntryInput {
-    id: Option<i64>,
-    entry_date: String,
-    start_time: String,
-    end_time: String,
-    event_type_id: i64,
-    note: String,
-    source_mode: String,
-}
+struct TimeEntryInput { id: Option<i64>, entry_date: String, start_time: String, end_time: String, event_type_id: i64, note: String, source_mode: String }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Note {
-    id: i64,
-    content: String,
-    color: String,
-    x: i64,
-    y: i64,
-    width: i64,
-    height: i64,
-    collapsed: bool,
-    pinned: bool,
-    font_size: i64,
-    style_json: String,
-    created_at: String,
-    updated_at: String,
-}
+struct Note { id: i64, content: String, color: String, x: i64, y: i64, width: i64, height: i64, collapsed: bool, pinned: bool, font_size: i64, style_json: String, created_at: String, updated_at: String }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct NoteInput {
-    id: Option<i64>,
-    content: String,
-    color: String,
-    x: i64,
-    y: i64,
-    width: i64,
-    height: i64,
-    collapsed: bool,
-    pinned: bool,
-    font_size: i64,
-    style_json: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Todo {
-    id: i64,
-    title: String,
-    note: String,
-    completed: bool,
-    due_at: Option<String>,
-    repeat_rule: String,
-    priority: String,
-    sort_order: i64,
-    linked_note_id: Option<i64>,
-    created_at: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct TodoInput {
-    id: Option<i64>,
-    title: String,
-    note: String,
-    completed: bool,
-    due_at: Option<String>,
-    repeat_rule: String,
-    priority: String,
-    sort_order: i64,
-    linked_note_id: Option<i64>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PomodoroSession {
-    id: i64,
-    started_at: String,
-    duration_minutes: i64,
-    break_minutes: i64,
-    status: String,
-    linked_time_entry_id: Option<i64>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PomodoroInput {
-    duration_minutes: i64,
-    break_minutes: i64,
-    status: String,
-    linked_time_entry_id: Option<i64>,
-}
+struct NoteInput { id: Option<i64>, content: String, color: String, x: i64, y: i64, width: i64, height: i64, collapsed: bool, pinned: bool, font_size: i64, style_json: String }
+type Db = Arc<Mutex<Connection>>;
 
 fn db_path(app: &tauri::App) -> Result<PathBuf, AppError> {
     let dir = app.path().app_data_dir().map_err(|e| AppError::Invalid(e.to_string()))?;
@@ -210,35 +99,9 @@ fn init_db(conn: &Connection) -> Result<(), AppError> {
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
-        CREATE TABLE IF NOT EXISTS todos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            note TEXT NOT NULL DEFAULT '',
-            completed INTEGER NOT NULL DEFAULT 0,
-            due_at TEXT,
-            repeat_rule TEXT NOT NULL DEFAULT 'none',
-            priority TEXT NOT NULL DEFAULT 'normal',
-            sort_order INTEGER NOT NULL DEFAULT 0,
-            linked_note_id INTEGER,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY(linked_note_id) REFERENCES notes(id)
-        );
-        CREATE TABLE IF NOT EXISTS pomodoro_sessions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            started_at TEXT NOT NULL,
-            duration_minutes INTEGER NOT NULL,
-            break_minutes INTEGER NOT NULL,
-            status TEXT NOT NULL,
-            linked_time_entry_id INTEGER,
-            FOREIGN KEY(linked_time_entry_id) REFERENCES time_entries(id)
-        );
         "#,
     )?;
 
-    // Keep existing local databases compatible with new todo fields.
-    let _ = conn.execute("ALTER TABLE todos ADD COLUMN note TEXT NOT NULL DEFAULT ''", []);
-    let _ = conn.execute("ALTER TABLE todos ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'", []);
-    let _ = conn.execute("ALTER TABLE todos ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0", []);
     merge_legacy_overnight_entries(conn)?;
 
     let count: i64 = conn.query_row("SELECT COUNT(*) FROM event_types", [], |row| row.get(0))?;
@@ -564,83 +427,6 @@ fn delete_note(db: State<Db>, id: i64) -> Result<(), AppError> {
 }
 
 #[tauri::command]
-fn list_todos(db: State<Db>) -> Result<Vec<Todo>, AppError> {
-    with_conn(&db, |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT id, title, note, completed, due_at, repeat_rule, priority, sort_order, linked_note_id, created_at FROM todos ORDER BY completed, CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END, sort_order, due_at IS NULL, due_at, created_at DESC",
-        )?;
-        let rows = stmt.query_map([], |row| {
-            Ok(Todo {
-                id: row.get(0)?, title: row.get(1)?, note: row.get(2)?,
-                completed: row.get::<_, i64>(3)? == 1, due_at: row.get(4)?,
-                repeat_rule: row.get(5)?, priority: row.get(6)?, sort_order: row.get(7)?,
-                linked_note_id: row.get(8)?, created_at: row.get(9)?,
-            })
-        })?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(AppError::Db)
-    })
-}
-
-#[tauri::command]
-fn save_todo(db: State<Db>, todo: TodoInput) -> Result<i64, AppError> {
-    with_conn(&db, |conn| {
-        if todo.title.trim().is_empty() { return Err(AppError::Invalid("todo title is required".to_string())); }
-        if todo.id.unwrap_or(0) == 0 {
-            conn.execute(
-                "INSERT INTO todos (title, note, completed, due_at, repeat_rule, priority, sort_order, linked_note_id, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                params![todo.title.trim(), todo.note, bool_i(todo.completed), todo.due_at, todo.repeat_rule, todo.priority, todo.sort_order, todo.linked_note_id, now()],
-            )?;
-            Ok(conn.last_insert_rowid())
-        } else {
-            let id = todo.id.unwrap_or_default();
-            conn.execute(
-                "UPDATE todos SET title = ?1, note = ?2, completed = ?3, due_at = ?4, repeat_rule = ?5, priority = ?6, sort_order = ?7, linked_note_id = ?8 WHERE id = ?9",
-                params![todo.title.trim(), todo.note, bool_i(todo.completed), todo.due_at, todo.repeat_rule, todo.priority, todo.sort_order, todo.linked_note_id, id],
-            )?;
-            Ok(id)
-        }
-    })
-}
-#[tauri::command]
-fn delete_todo(db: State<Db>, id: i64) -> Result<(), AppError> {
-    with_conn(&db, |conn| {
-        conn.execute("DELETE FROM todos WHERE id = ?1", params![id])?;
-        Ok(())
-    })
-}
-
-#[tauri::command]
-fn list_pomodoro_sessions(db: State<Db>) -> Result<Vec<PomodoroSession>, AppError> {
-    with_conn(&db, |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT id, started_at, duration_minutes, break_minutes, status, linked_time_entry_id FROM pomodoro_sessions ORDER BY started_at DESC LIMIT 50",
-        )?;
-        let rows = stmt.query_map([], |row| {
-            Ok(PomodoroSession {
-                id: row.get(0)?,
-                started_at: row.get(1)?,
-                duration_minutes: row.get(2)?,
-                break_minutes: row.get(3)?,
-                status: row.get(4)?,
-                linked_time_entry_id: row.get(5)?,
-            })
-        })?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(AppError::Db)
-    })
-}
-
-#[tauri::command]
-fn save_pomodoro_session(db: State<Db>, session: PomodoroInput) -> Result<i64, AppError> {
-    with_conn(&db, |conn| {
-        conn.execute(
-            "INSERT INTO pomodoro_sessions (started_at, duration_minutes, break_minutes, status, linked_time_entry_id) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![now(), session.duration_minutes, session.break_minutes, session.status, session.linked_time_entry_id],
-        )?;
-        Ok(conn.last_insert_rowid())
-    })
-}
-
-#[tauri::command]
 fn set_autostart(enabled: bool) -> Result<(), AppError> {
     let key = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
     let output = if enabled {
@@ -650,16 +436,6 @@ fn set_autostart(enabled: bool) -> Result<(), AppError> {
         Command::new("reg").args(["delete", key, "/v", "TimePast", "/f"]).output()
     }.map_err(AppError::Io)?;
     if !output.status.success() && enabled { return Err(AppError::Invalid("unable to update Windows startup setting".into())); }
-    Ok(())
-}
-#[tauri::command]
-fn notify_user(app: AppHandle, title: String, body: String) -> Result<(), AppError> {
-    app.notification()
-        .builder()
-        .title(title)
-        .body(body)
-        .show()
-        .map_err(|e| AppError::Invalid(e.to_string()))?;
     Ok(())
 }
 fn geometry_path(app: &AppHandle, name: &str) -> Result<PathBuf, AppError> {
@@ -853,9 +629,8 @@ async fn set_note_always_on_top(app: AppHandle, note_id: i64, on_top: bool) -> R
 fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let open = MenuItem::with_id(app, "open", "Open TimePast", true, None::<&str>)?;
     let note = MenuItem::with_id(app, "note", "New note", true, None::<&str>)?;
-    let pomodoro = MenuItem::with_id(app, "pomodoro", "Start Pomodoro", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &note, &pomodoro, &quit])?;
+    let menu = Menu::with_items(app, &[&open, &note, &quit])?;
 
     TrayIconBuilder::new()
         .icon(app.default_window_icon().expect("missing bundled app icon").clone())
@@ -875,13 +650,6 @@ fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                     let _ = window.set_focus();
                 }
             }
-            "pomodoro" => {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.emit("tray-start-pomodoro", ());
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
-            }
             "quit" => app.exit(0),
             _ => {}
         })
@@ -891,7 +659,6 @@ fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_notification::init())
         .on_window_event(|window, event| {
             if matches!(event, WindowEvent::CloseRequested { .. }) && window.label() == "main" {
                 window.app_handle().exit(0);
@@ -917,12 +684,6 @@ pub fn run() {
             get_note,
             save_note,
             delete_note,
-            list_todos,
-            save_todo,
-            delete_todo,
-            list_pomodoro_sessions,
-            save_pomodoro_session,
-            notify_user,
             set_autostart,
             save_window_geometry,
             set_main_window_mode,

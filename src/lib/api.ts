@@ -1,13 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   EventType,
-  PomodoroSession,
   StickyNote,
   StickyNoteInput,
   TimeEntry,
-  TimeEntryInput,
-  Todo,
-  TodoInput
+  TimeEntryInput
 } from "./types";
 
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -20,9 +17,7 @@ const memory = {
     { id: 4, name: "杂事", color: "#8b5cf6", sortOrder: 4, pinned: false, archived: false }
   ] as EventType[],
   entries: [] as TimeEntry[],
-  notes: [] as StickyNote[],
-  todos: [] as Todo[],
-  pomodoros: [] as PomodoroSession[]
+  notes: [] as StickyNote[]
 };
 
 let nextId = 100;
@@ -110,26 +105,6 @@ async function fallback<T>(command: string, args?: Record<string, unknown>): Pro
     case "delete_note":
       memory.notes = memory.notes.filter((item) => item.id !== args?.id);
       return undefined as T;
-    case "list_todos":
-      return memory.todos as T;
-    case "save_todo": {
-      const input = args?.todo as TodoInput;
-      const todo: Todo = { id: input.id ?? nextId++, ...input, createdAt: new Date().toISOString() };
-      memory.todos = input.id ? memory.todos.map((item) => (item.id === input.id ? todo : item)) : [todo, ...memory.todos];
-      return todo.id as T;
-    }
-    case "delete_todo":
-      memory.todos = memory.todos.filter((item) => item.id !== args?.id);
-      return undefined as T;
-    case "list_pomodoro_sessions":
-      return memory.pomodoros as T;
-    case "save_pomodoro_session": {
-      const input = args?.session as Omit<PomodoroSession, "id" | "startedAt">;
-      const session = { id: nextId++, startedAt: new Date().toISOString(), ...input };
-      memory.pomodoros = [session, ...memory.pomodoros];
-      return session.id as T;
-    }
-    case "notify_user":
     case "set_main_window_mode":
     case "save_window_geometry":
     case "open_note_window":
@@ -153,13 +128,6 @@ export const api = {
   getNote: (id: number) => call<StickyNote>("get_note", { id }),
   saveNote: (note: StickyNoteInput) => call<number>("save_note", { note }),
   deleteNote: (id: number) => call<void>("delete_note", { id }),
-  listTodos: () => call<Todo[]>("list_todos"),
-  saveTodo: (todo: TodoInput) => call<number>("save_todo", { todo }),
-  deleteTodo: (id: number) => call<void>("delete_todo", { id }),
-  listPomodoroSessions: () => call<PomodoroSession[]>("list_pomodoro_sessions"),
-  savePomodoroSession: (session: Omit<PomodoroSession, "id" | "startedAt">) =>
-    call<number>("save_pomodoro_session", { session }),
-  notifyUser: (title: string, body: string) => call<void>("notify_user", { title, body }),
   setWindowMode: (mode: "mini" | "full") => call<void>("set_main_window_mode", { mode }),
   openNoteWindow: (noteId: number) => call<void>("open_note_window", { noteId }),
   saveWindowGeometry: (name: string, x: number, y: number, width: number, height: number) =>
