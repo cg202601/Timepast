@@ -1,7 +1,7 @@
 {
   "name": "timepast",
   "private": true,
-  "version": "0.1.8",
+  "version": "0.1.9",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -24,5 +24,8 @@
     "@vitejs/plugin-react": "^4.6.0",
     "typescript": "^5.8.3",
     "vite": "^7.0.4"
+  },
+  "overrides": {
+    "postcss": "8.5.23"
   }
 }

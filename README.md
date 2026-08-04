@@ -6,8 +6,8 @@ TimePast is a local-first Windows desktop productivity app for time entries and 
 
 Download the latest Windows installer from the [GitHub Releases page](https://github.com/secure-artifacts/Timepast/releases):
 
-- `TimePast_0.1.8_x64-setup.exe` for the standard installer
-- `TimePast_0.1.8_x64_en-US.msi` for MSI deployment
+- `TimePast_0.1.9_x64-setup.exe` for the standard installer
+- `TimePast_0.1.9_x64_en-US.msi` for MSI deployment
 
 All app data is stored locally on the user's machine.
 
@@ -17,8 +17,8 @@ Release assets are built and uploaded by GitHub Actions. After downloading an
 installer, verify its provenance with GitHub CLI:
 
 ```bash
-gh attestation verify ./TimePast_0.1.8_x64-setup.exe --repo secure-artifacts/Timepast
-gh attestation verify ./TimePast_0.1.8_x64_en-US.msi --repo secure-artifacts/Timepast
+gh attestation verify ./TimePast_0.1.9_x64-setup.exe --repo secure-artifacts/Timepast
+gh attestation verify ./TimePast_0.1.9_x64_en-US.msi --repo secure-artifacts/Timepast
 ```
 
 Successful verification means the installer was produced by the official CI
@@ -44,9 +44,9 @@ npm run tauri build
 Versioned releases are created from Git tags:
 
 ```bash
-git tag -a v0.1.8 -m "Release TimePast v0.1.8"
+git tag -a v0.1.9 -m "Release TimePast v0.1.9"
 git push origin main
-git push origin v0.1.8
+git push origin v0.1.9
 ```
 
 The GitHub Actions release workflow builds the Windows installers and attaches them to the GitHub Release.

@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.1.9 - 2026-08-04
+
+### Security
+- Overrode PostCSS to version 8.5.23, resolving Dependabot alerts GHSA-r28c-9q8g-f849 and GHSA-fxqj-rqcc-2cmp.
+
+
 ## v0.1.8 - 2026-08-03
 
 ### Removed
