@@ -301,7 +301,7 @@ pub(super) fn save_work_type(db: State<Db>, item: WorkTypeInput) -> Result<i64, 
             let old: Option<(String, i64)> = tx.query_row("SELECT unit, decimals FROM work_types WHERE id = ?1", params![id], |row| Ok((row.get(0)?, row.get(1)?))).optional()?;
             let (old_unit, old_decimals) = old.ok_or_else(|| AppError::Invalid("工作类型不存在".into()))?;
             if old_unit != item.unit || old_decimals != item.decimals {
-                let count: i64 = tx.query_row("SELECT COUNT(*) FROM work_outputs WHERE work_type_id = ?1", params![id], |row| row.get(0))?;
+                let count: i64 = tx.query_row("SELECT (SELECT COUNT(*) FROM work_outputs WHERE work_type_id = ?1) + (SELECT COUNT(*) FROM work_cycle_goals WHERE work_type_id = ?1)", params![id], |row| row.get(0))?;
                 if count > 0 { return Err(AppError::Invalid("已有产出记录的单位和小数位不能修改；请另建工作类型".into())); }
             }
             tx.execute("UPDATE work_types SET name = ?1, unit = ?2, decimals = ?3, color = ?4, hourly_target = ?5, archived = ?6 WHERE id = ?7", params![item.name.trim(), item.unit.trim(), item.decimals, item.color, item.hourly_target, item.archived, id])?;
@@ -433,7 +433,7 @@ fn expired_counts(conn: &Connection, settings: &PerformanceSettings) -> Result<E
     } else { 0 };
     let cutoff = summary_cutoff(settings);
     let summary_days = conn.query_row(
-        "SELECT COUNT(*) FROM (SELECT day FROM work_outputs WHERE day < ?1 UNION SELECT day FROM work_time_days WHERE day < ?1)",
+        "SELECT COUNT(*) FROM (SELECT day FROM work_outputs WHERE day < ?1 UNION SELECT day FROM work_time_days WHERE day < ?1 UNION SELECT day FROM work_day_plans WHERE day < ?1 UNION SELECT day FROM work_day_overrides WHERE day < ?1)",
         params![cutoff], |row| row.get(0)
     )?;
     Ok(ExpiredCounts { entries, summary_days })
@@ -484,6 +484,7 @@ pub(super) fn save_cycle_goal(db: State<Db>, work_type_id: i64, anchor_date: Str
         let (start, end) = cycle_for(date, settings.cycle_start_day);
         let start_str = day_string(start);
         let end_str = day_string(end);
+        if start_str < summary_cutoff(&settings) { return Err(AppError::Invalid("周期开始日已超出工作量汇总保留期限".into())); }
         let overlapping: i64 = conn.query_row("SELECT COUNT(*) FROM work_cycle_goals WHERE work_type_id = ?1 AND cycle_start < ?3 AND cycle_end > ?2 AND cycle_start != ?2", params![work_type_id, start_str, end_str], |row| row.get(0))?;
         if overlapping > 0 { return Err(AppError::Invalid("新周期与已有目标重叠，请选择未配置的周期".into())); }
         let tx = conn.unchecked_transaction()?;
@@ -530,9 +531,11 @@ pub(super) fn list_work_day_overrides(db: State<Db>, from: String, to: String) -
 
 #[tauri::command]
 pub(super) fn set_work_day_override(db: State<Db>, work_type_id: i64, date: String, mode: String, custom_target: Option<f64>) -> Result<(), AppError> {
-    parse_day(&date)?;
+    let day = parse_day(&date)?;
+    if day < chrono::Local::now().date_naive() { return Err(AppError::Invalid("过去日期的计划已固定，不能重新调整".into())); }
     if !["normal", "half", "rest", "custom", "default"].contains(&mode.as_str()) { return Err(AppError::Invalid("无效的单日安排".into())); }
     with_conn(&db, |conn| {
+        if date < summary_cutoff(&load_settings(conn)?) { return Err(AppError::Invalid("日期已超出工作量汇总保留期限".into())); }
         let item = work_type(conn, work_type_id)?;
         if mode == "custom" && !custom_target.is_some_and(|value| valid_quantity(value, item.decimals)) {
             return Err(AppError::Invalid("自定义日目标必须符合工作类型的小数位".into()));

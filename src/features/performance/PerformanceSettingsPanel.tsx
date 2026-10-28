@@ -7,7 +7,7 @@ import type { EventType, PerformanceSettings, WorkType } from "../../lib/types";
 const weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 const blank = (): WorkType => ({ id: 0, name: "", unit: "张", decimals: 0, color: "#2563eb", hourlyTarget: 1, archived: false, eventTypeIds: [], weekFactors: [1, 1, 1, 1, 1, 1, 1] });
 
-export function PerformanceSettingsPanel({ events, setStatus }: { events: EventType[]; setStatus: (message: string) => void }) {
+export function PerformanceSettingsPanel({ events, refreshEntries, setStatus }: { events: EventType[]; refreshEntries: () => Promise<void>; setStatus: (message: string) => void }) {
   const [settings, setSettings] = useState<PerformanceSettings | null>(null);
   const [saved, setSaved] = useState<PerformanceSettings | null>(null);
   const [types, setTypes] = useState<WorkType[]>([]);
@@ -23,6 +23,7 @@ export function PerformanceSettingsPanel({ events, setStatus }: { events: EventT
       if ((counts.entries || counts.summaryDays) && !window.confirm(`将删除 ${counts.entries} 条旧打卡明细、${counts.summaryDays} 天旧工作量汇总，无法恢复。确定继续吗？`)) return;
       await api.savePerformanceSettings(settings);
       await refresh();
+      await refreshEntries();
       setStatus("周期与保留设置已保存");
     } catch (error) { setStatus(`设置失败：${String(error)}`); } finally { setBusy(false); }
   };
