@@ -1323,3 +1323,50 @@ body.note-window-page .desktop-note.collapsed .desktop-note-toolbar {
   .day-row, .category-summary-row { grid-template-columns: 88px minmax(0, 1fr) 45px; gap: 6px; }
   .day-duration, .category-summary-row strong { font-size: 10px; }
 }
+
+/* Work output and efficiency */
+.dashboard-mode { display: flex; gap: 6px; margin-bottom: 14px; padding: 4px; border-radius: 10px; background: #edf2f8; width: fit-content; }
+.dashboard-mode button { border: 0; background: transparent; }
+.dashboard-mode button.active { background: #dbeafe; color: #1d4ed8; font-weight: 700; }
+.performance-view { display: grid; gap: 14px; }
+.performance-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.performance-settings, .performance-editor, .performance-report { display: grid; gap: 14px; min-width: 0; }
+.performance-setting-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.performance-setting-grid label, .performance-week-grid label, .performance-goal-edit label, .performance-day-editor > label { display: grid; gap: 5px; font-size: 12px; color: #647084; }
+.performance-setting-grid input, .performance-setting-grid select, .performance-week-grid select, .performance-goal-edit input, .performance-day-editor > label select { width: 100%; }
+.performance-warning { padding: 10px 12px; border: 1px solid #fbbf24; border-radius: 8px; color: #92400e; background: #fffbeb; font-size: 13px; }
+.performance-type-row { display: flex; align-items: center; gap: 9px; padding: 10px 0; border-bottom: 1px solid #e2e8f0; flex-wrap: wrap; }
+.performance-type-row i, .performance-dot, .performance-chart-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.performance-type-row strong { min-width: 100px; }
+.performance-type-row span { color: #647084; font-size: 12px; }
+.performance-type-row button:first-of-type { margin-left: auto; }
+.performance-editor { padding: 15px; border: 1px solid #cbd5e1; border-radius: 9px; background: #f8fafc; }
+.performance-editor h3, .performance-day-editor h3 { margin: 0; font-size: 15px; }
+.performance-choice-list { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 8px; }
+.performance-choice-list label { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; }
+.performance-week-grid { display: grid; grid-template-columns: repeat(7, minmax(90px, 1fr)); gap: 8px; margin-top: 8px; overflow-x: auto; }
+.performance-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.performance-report .panel-head { align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+.performance-report h2 { display: flex; align-items: center; gap: 7px; }
+.performance-goal-edit { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; }
+.performance-goal-edit input { width: 120px; }
+.performance-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.performance-metrics > div { display: grid; align-content: start; gap: 4px; padding: 12px; border-radius: 8px; background: #f1f5f9; }
+.performance-metrics span, .performance-metrics small { color: #647084; font-size: 12px; }
+.performance-metrics strong { font-size: 18px; overflow-wrap: anywhere; }
+.performance-pace { margin: 0; color: #334155; font-size: 13px; }
+.performance-chart { overflow-x: auto; }
+.performance-chart svg { display: block; width: 100%; min-width: 500px; }
+.performance-chart-legend { display: flex; gap: 15px; font-size: 12px; color: #647084; }
+.performance-chart-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.performance-day-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 5px; max-height: 260px; overflow-y: auto; }
+.performance-day-row { display: grid; grid-template-columns: 42px 52px 1fr 1fr auto; align-items: center; gap: 5px; padding: 5px; border-bottom: 1px solid #e2e8f0; color: #475569; font-size: 11px; }
+.performance-day-row button { padding: 3px 5px; font-size: 11px; }
+.performance-day-editor { display: grid; gap: 10px; padding: 14px; border: 1px solid #e2e8f0; border-radius: 8px; }
+.performance-day-editor > label { max-width: 180px; }
+.app[data-theme="night"] .dashboard-mode, .app[data-theme="night"] .performance-editor, .app[data-theme="night"] .performance-metrics > div { background: #334155; color: #e2e8f0; }
+@media (max-width: 760px) {
+  .performance-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .performance-week-grid { grid-template-columns: repeat(4, minmax(90px, 1fr)); }
+  .performance-day-list { grid-template-columns: 1fr; }
+}

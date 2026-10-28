@@ -79,3 +79,50 @@ export interface ActiveTimer {
   note?: string;
 }
 
+export type RetentionMode = "cycle" | "custom" | "off";
+export type DayMode = "default" | "normal" | "half" | "rest" | "custom";
+
+export interface PerformanceSettings {
+  cycleStartDay: number;
+  summaryRetentionDays: 31 | 90 | 180 | 365;
+  entryRetentionMode: RetentionMode;
+  entryRetentionDays: number;
+}
+
+export interface WorkType {
+  id: number;
+  name: string;
+  unit: string;
+  decimals: number;
+  color: string;
+  hourlyTarget: number;
+  archived: boolean;
+  eventTypeIds: number[];
+  weekFactors: number[];
+}
+
+export interface CycleGoal {
+  workTypeId: number;
+  cycleStart: string;
+  cycleEnd: string;
+  target: number;
+  hourlyTarget: number;
+}
+
+export interface WorkDay {
+  workTypeId: number;
+  date: string;
+  output: number | null;
+  minutes: number;
+  planned: number | null;
+}
+
+export interface WorkDayOverride {
+  workTypeId: number;
+  date: string;
+  mode: Exclude<DayMode, "default">;
+  customTarget: number | null;
+}
+
+export interface ExpiredCounts { entries: number; summaryDays: number }
+

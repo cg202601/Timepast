@@ -6,6 +6,8 @@ import { Check, ChevronDown, Clock3, Edit3, LayoutDashboard, Maximize2, Minimize
 import { MiniBar } from "./components/MiniBar";
 import { EntryList } from "./features/entries/EntryList";
 import { InsightsView } from "./features/insights/InsightsView";
+import { PerformanceView } from "./features/performance/PerformanceView";
+import { PerformanceSettingsPanel } from "./features/performance/PerformanceSettingsPanel";
 import { useActiveTimer } from "./hooks/useActiveTimer";
 import { useAppData } from "./hooks/useAppData";
 import { api } from "./lib/api";
@@ -32,6 +34,7 @@ function plainText(content: string) {
 
 function App() {
   const [view, setView] = useState<ViewKey>("today");
+  const [dashboardMode, setDashboardMode] = useState<"time" | "performance">("time");
   const [mini, setMini] = useState(false);
   const [status, setStatus] = useState("");
   const handleDataError = useCallback((message: string) => setStatus(message), []);
@@ -149,7 +152,7 @@ function App() {
     </aside>
     <main className="main">
       <header className="topbar"><div><h1>{views.find((item) => item.key === view)?.label}</h1><p>{status || "记录时间、整理便签，数据只保存在本机。"}</p></div><div className="quick-events">{quickEvents.map((item) => <button className="chip" key={item.id} disabled={!!activeTimer} onClick={() => startTimer(item)}><span style={{ background: item.color }} />{item.name}</button>)}<button onClick={() => setMini(true)}><Minimize2 size={16} />小条</button></div></header>
-      {view === "today" && <InsightsView entries={entries} events={eventTypes} notes={notes} onAddEntry={() => setView("entries")} onOpenNotes={() => setView("notes")} />}
+      {view === "today" && <><div className="dashboard-mode"><button className={dashboardMode === "time" ? "active" : ""} onClick={() => setDashboardMode("time")}>时间记录</button><button className={dashboardMode === "performance" ? "active" : ""} onClick={() => setDashboardMode("performance")}>工作效率</button></div>{dashboardMode === "time" ? <InsightsView entries={entries} events={eventTypes} notes={notes} onAddEntry={() => setView("entries")} onOpenNotes={() => setView("notes")} /> : <PerformanceView setStatus={setStatus} />}</>}
       {view === "entries" && <EntriesView events={activeEvents} entries={entries} activeTimer={activeTimer} setActiveTimer={setActiveTimer} onStop={stopTimer} refresh={refresh} setStatus={setStatus} />}
       {view === "notes" && <NotesView notes={notes} refresh={refresh} createNote={createNote} setStatus={setStatus} />}
       {view === "settings" && <SettingsView events={eventTypes} refresh={refresh} theme={theme} setTheme={setTheme} brightness={brightness} setBrightness={setBrightness} setStatus={setStatus} />}
@@ -243,47 +246,6 @@ function NoteCard({ note, refresh, setStatus }: { note: Note; refresh: () => Pro
   return <article className="sticky" style={{ background: note.color, width: note.width, minHeight: isAppNoteCollapsed(note) ? 112 : note.height }}><div className="sticky-head"><label className="sticky-title-wrap"><input value={title} onChange={(event) => setTitle(event.target.value)} onBlur={() => persist({ styleJson: withNoteTitle(localRef.current, title) }, 0)} placeholder="便签名称" aria-label="便签名称" /></label><div className="sticky-actions"><button onClick={() => persist({ pinned: !note.pinned }, 0)} title="置顶"><Pin size={15} className={note.pinned ? "filled" : ""} /></button><button onClick={() => persist({ styleJson: withAppNoteCollapsed(note, !isAppNoteCollapsed(note)) }, 0)} title="收缩应用内便签"><ChevronDown size={15} /></button><button onClick={() => api.openNoteWindow(note.id).then(() => setStatus("桌面便签已打开"))} title="打开桌面窗口"><Maximize2 size={15} /></button><button onClick={async () => { await api.deleteNote(note.id); await refresh(); }} title="删除"><Trash2 size={15} /></button></div></div>{!isAppNoteCollapsed(note) && <><div ref={editorRef} className="sticky-editor rich-editor" contentEditable suppressContentEditableWarning data-placeholder="点击这里编辑便签" style={{ fontSize: note.fontSize }} onFocus={() => { editingRef.current = true; }} onBlur={() => { editingRef.current = false; persist({ content: editorRef.current?.innerHTML || "" }); }} onKeyDown={handleTodoBackspace} onPaste={handlePaste} onMouseUp={rememberSelection} onKeyUp={rememberSelection} onInput={() => persist({ content: editorRef.current?.innerHTML || "" })} onClick={(event) => { const check = (event.target as HTMLElement).closest(".todo-check"); if (check) { check.classList.toggle("checked"); persist({ content: editorRef.current?.innerHTML || "" }, 0); } }} /><div className="sticky-tools">{noteColors.map((color) => <button key={color} className="swatch" style={{ background: color }} onClick={() => persist({ color }, 0)} />)}<button onClick={() => persist({ fontSize: Math.max(12, note.fontSize - 1) }, 0)}>A-</button><button onClick={() => persist({ fontSize: Math.min(24, note.fontSize + 1) }, 0)}>A+</button><button onMouseDown={preserve} onClick={() => format("bold")} title="加粗">B</button><button onMouseDown={preserve} onClick={() => format("hiliteColor", "#fff59d")} title="标注"><Edit3 size={14} /></button><label className="font-color" title="字体颜色"><Palette size={14} /><input type="color" value={fontColor} onMouseDown={preserve} onChange={(event) => { setFontColor(event.target.value); format("foreColor", event.target.value); }} /></label><button onMouseDown={preserve} onClick={addTodoLine} title="另起一行添加待办"><Check size={14} /></button></div></>}</article>;
 }
 
-function RetentionSettings({ refresh, setStatus }: { refresh: () => Promise<void>; setStatus: (value: string) => void }) {
-  const [activeDays, setActiveDays] = useState<number | null | undefined>(undefined);
-  const [days, setDays] = useState(30);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    api.getEntryRetentionDays().then((current) => {
-      if (cancelled) return;
-      setActiveDays(current);
-      setDays(current ?? 30);
-    }).catch((error) => setStatus(`读取保留期限失败：${String(error)}`));
-    return () => { cancelled = true; };
-  }, [setStatus]);
-
-  const apply = async () => {
-    if (saving) return;
-    setSaving(true);
-    try {
-      const count = await api.countExpiredEntries(days);
-      if (count > 0 && !window.confirm(`设置为保留最近 ${days} 天后，将立即永久删除 ${count} 条更早的打卡记录。确定继续吗？`)) return;
-      const deleted = await api.setEntryRetentionDays(days);
-      setActiveDays(days);
-      await refresh();
-      setStatus(deleted > 0 ? `已保留最近 ${days} 天的打卡记录，清理了 ${deleted} 条过期记录` : `打卡记录保留期限已设为 ${days} 天`);
-    } catch (error) {
-      setStatus(`设置保留期限失败：${String(error)}`);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return <div className="panel"><div className="panel-head"><h2>打卡记录保留期限</h2></div>
-    <label>保留最近天数<select value={days} disabled={activeDays === undefined || saving} onChange={(event) => setDays(Number(event.target.value))}>
-      {[7, 15, 25, 30].map((value) => <option key={value} value={value}>{value} 天</option>)}
-    </select></label>
-    <p className="muted">按本机日期计算，包含今天。应用启动和读取记录时会自动清理过期打卡；便签不受影响。</p>
-    {activeDays === null && <p className="muted">现有记录尚未启用自动清理。选择期限并应用后，才会清理旧记录。</p>}
-    <button className="primary" disabled={activeDays === undefined || saving || activeDays === days} onClick={() => void apply()}>{saving ? "正在设置…" : "应用保留期限"}</button>
-  </div>;
-}
 
 function SettingsView({ events, refresh, theme, setTheme, brightness, setBrightness, setStatus }: { events: EventType[]; refresh: () => Promise<void>; theme: string; setTheme: (value: string) => void; brightness: number; setBrightness: (value: number) => void; setStatus: (value: string) => void }) {
   const [name, setName] = useState("");
@@ -294,7 +256,7 @@ function SettingsView({ events, refresh, theme, setTheme, brightness, setBrightn
   const changeAutostart = (enabled: boolean) => { setAutostart(enabled); localStorage.setItem("timepast.autostart", String(enabled)); setStatus(enabled ? "正在开启开机自启" : "正在关闭开机自启"); api.setAutostart(enabled).then(() => setStatus(enabled ? "已开启开机自启" : "已关闭开机自启")).catch((error) => { setAutostart(!enabled); localStorage.setItem("timepast.autostart", String(!enabled)); setStatus(`开机自启设置失败：${String(error)}`); }); };
   return <section className="grid settings-grid">
     <div className="panel"><div className="panel-head"><h2>外观与启动</h2></div><label>界面皮肤<select value={theme} onChange={(event) => setTheme(event.target.value)}>{themes.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label><label>界面亮度<input type="range" min="75" max="115" value={brightness} onChange={(event) => setBrightness(Number(event.target.value))} /><span>{brightness}%</span></label><label className="setting-toggle"><input type="checkbox" checked={autostart} onChange={(event) => changeAutostart(event.target.checked)} />开机自动启动 TimePast</label></div>
-    <RetentionSettings refresh={refresh} setStatus={setStatus} />
+    <PerformanceSettingsPanel events={events} setStatus={setStatus} />
     <ShortcutSettings events={events} />
     <div className="panel"><div className="panel-head"><h2>事件类型</h2></div><label>名称<input value={name} onChange={(event) => setName(event.target.value)} /></label><label>颜色<input type="color" value={color} onChange={(event) => setColor(event.target.value)} /></label><button className="primary" onClick={async () => { if (!name.trim()) return; await api.saveEventType({ id: 0, name, color, sortOrder: events.length + 1, pinned: true, archived: false }); setName(""); await refresh(); }}><Plus size={16} />添加事件</button></div>
     <div className="panel wide"><div className="event-list">{events.map((item) => editingEvent?.id === item.id ? <div className="event-row event-edit" key={item.id}><span className="dot" style={{ background: editingEvent.color }} /><input aria-label="事件名称" value={editingEvent.name} onChange={(event) => setEditingEvent({ ...editingEvent, name: event.target.value })} /><input aria-label="事件颜色" type="color" value={editingEvent.color} onChange={(event) => setEditingEvent({ ...editingEvent, color: event.target.value })} /><button className="primary" onClick={async () => { if (!editingEvent.name.trim()) return; await api.saveEventType({ ...editingEvent, name: editingEvent.name.trim() }); setEditingEvent(null); await refresh(); setStatus("事件已更新"); }}>保存</button><button onClick={() => setEditingEvent(null)}>取消</button></div> : <div className="event-row" key={item.id}><span className="dot" style={{ background: item.color }} /><strong>{item.name}</strong><button onClick={() => setEditingEvent(item)}><Edit3 size={15} />编辑</button><button onClick={async () => { const pinned = !item.pinned; const sortOrder = pinned ? Math.min(0, ...events.filter((event) => event.pinned && event.id !== item.id).map((event) => event.sortOrder)) - 1 : item.sortOrder; await api.saveEventType({ ...item, pinned, archived: pinned ? false : item.archived, sortOrder }); await refresh(); }}><Pin size={15} />{item.pinned ? "取消置顶" : "置顶"}</button><button onClick={async () => { await api.archiveEventType(item.id); await refresh(); }}><Trash2 size={15} />隐藏</button><button className="danger-icon" title="删除事件" onClick={async () => { try { await api.deleteEventType(item.id); await refresh(); setStatus("事件已删除"); } catch (error) { setStatus("无法删除已有打卡记录的事件，请使用隐藏。"); } }}><Trash2 size={15} />删除</button></div>)}</div></div>

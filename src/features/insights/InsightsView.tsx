@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { addDays, addMonths, addWeeks, format, parseISO, startOfMonth, startOfWeek, subDays } from "date-fns";
+import { addDays, addMonths, addWeeks, format, parseISO, startOfMonth, startOfWeek } from "date-fns";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { EntryList } from "../entries/EntryList";
 import { api } from "../../lib/api";
+import { entryCutoff } from "../../lib/performance";
 import { noteTitle } from "../../lib/noteMeta";
 import { normalizeStoredRichText } from "../../lib/richText";
 import { formatDuration, todayDate } from "../../lib/time";
-import type { EventType, StickyNote, TimeEntry } from "../../lib/types";
+import type { EventType, PerformanceSettings, StickyNote, TimeEntry } from "../../lib/types";
 
 type Period = "day" | "week" | "month";
 type ChartMode = "bars" | "line";
@@ -62,12 +63,12 @@ export function InsightsView({ entries, events, notes, onAddEntry, onOpenNotes }
   const [chartMode, setChartMode] = useState<ChartMode>("bars");
   const [anchor, setAnchor] = useState(todayDate());
   const [categoryId, setCategoryId] = useState<number | "all">("all");
-  const [retentionDays, setRetentionDays] = useState<number | null>(null);
-  useEffect(() => { api.getEntryRetentionDays().then(setRetentionDays).catch(() => undefined); }, []);
+  const [retention, setRetention] = useState<PerformanceSettings | null>(null);
+  useEffect(() => { api.getPerformanceSettings().then(setRetention).catch(() => undefined); }, []);
   const dates = useMemo(() => periodDates(period, parseISO(anchor)), [period, anchor]);
   const firstDate = dates[0];
   const lastDate = dates[dates.length - 1];
-  const cutoff = retentionDays ? format(subDays(new Date(), retentionDays - 1), "yyyy-MM-dd") : null;
+  const cutoff = retention ? entryCutoff(retention, todayDate()) : null;
   const parts = useMemo(() => splitEntriesByDay(entries), [entries]);
   const visibleParts = useMemo(() => parts.filter((part) => part.date >= firstDate && part.date <= lastDate && (!cutoff || part.date >= cutoff)), [parts, firstDate, lastDate, cutoff]);
   const categories = useMemo(() => categoriesFor(visibleParts, events), [visibleParts, events]);
@@ -90,7 +91,7 @@ export function InsightsView({ entries, events, notes, onAddEntry, onOpenNotes }
     <p className="insights-help">{period === "day" ? "当天看 24 小时时间线、分类时长和记录。" : chartMode === "bars" ? "堆叠柱状图：每天一根柱子，颜色表示时间分类；柱子越高，当天记录越久。" : "折线图：每天一个点，连线表示时长变化；点击分类可查看对应走势。"} 跨午夜的记录会分到实际日期。</p>
     <div className="insights-metrics"><div className="panel"><span>已记录时长</span><strong>{formatDuration(total)}</strong></div><div className="panel"><span>{period === "day" ? "时间段" : "有记录的天数"}</span><strong>{period === "day" ? `${dayEntries.length} 段` : `${new Set(visibleParts.map((part) => part.date)).size} 天`}</strong></div><div className="panel"><span>分类数量</span><strong>{categories.length} 类</strong></div></div>
     {period === "day" ? <><DayChart date={firstDate} parts={visibleParts} categories={categories} expired={!!cutoff && firstDate < cutoff} /><div className="grid today-grid"><div className="panel wide"><div className="panel-head"><h2>{firstDate === todayDate() ? "今日记录" : "当天记录"}</h2><button onClick={onAddEntry}><Plus size={16} />记录</button></div><EntryList entries={dayEntries} compact /></div><div className="panel"><div className="panel-head"><h2>便签预览</h2><button onClick={onOpenNotes}>打开</button></div>{notes.slice(0, 4).map((note) => <div className="note-preview" key={note.id} style={{ background: note.color }}><strong>{noteTitle(note)}</strong><div>{plainText(note.content)}</div></div>)}{!notes.length && <div className="insights-empty">还没有便签。</div>}</div></div></> : <TrendChart dates={dates} parts={visibleParts} categories={categories} selected={categoryId} onSelect={setCategoryId} cutoff={cutoff} period={period} mode={chartMode} onModeChange={setChartMode} />}
-    <p className="insights-footnote">仅统计当前保留的打卡记录。{retentionDays ? `当前保留最近 ${retentionDays} 天；灰色日期已超出保留期限，不表示当天没有活动。` : "已删除的记录无法恢复到图表。"} 今天之后的日期尚未发生。</p>
+    <p className="insights-footnote">仅统计当前保留的打卡明细。{retention?.entryRetentionMode === "cycle" ? "当前保留完整业绩周期；" : retention?.entryRetentionMode === "custom" ? `当前保留最近 ${retention.entryRetentionDays} 天；` : ""}灰色日期已超出保留期限，不表示当天没有活动。今天之后的日期尚未发生。</p>
   </section>;
 }
 
