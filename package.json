@@ -1,7 +1,7 @@
 {
   "name": "timepast",
   "private": true,
-  "version": "0.1.9",
+  "version": "0.1.10",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,7 +12,7 @@
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
     "date-fns": "^4.1.0",
-    "dompurify": "^3.4.12",
+    "dompurify": "^3.4.15",
     "lucide-react": "^0.525.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

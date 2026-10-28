@@ -1108,7 +1108,7 @@ body.note-window-page .desktop-note {
 }
 .app[data-theme="night"] .metric-row strong { color: #f8fafc; }
 .app[data-theme="night"] .metric-row span { color: #cbd5e1; }
-.app[data-theme="night"] .entry-row em,
+.app[data-theme="night"] .entry-row em { color: #cbd5e1; }
 
 /* The fixed desktop webview rule is more specific than the generic note rule. */
 body.note-window-page .desktop-note.collapsed {
@@ -1206,6 +1206,7 @@ body.note-window-page .desktop-note.collapsed .desktop-note-toolbar {
 .entry-copy-all {
   display: inline-flex;
   align-items: center;
+  flex: 0 0 auto;
   gap: 6px;
   white-space: nowrap;
   color: #1d4ed8;
@@ -1217,16 +1218,20 @@ body.note-window-page .desktop-note.collapsed .desktop-note-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 10px;
   padding: 2px 0;
 }
 
 .entry-day-head {
   flex: 1 1 180px;
+  min-width: 0;
   width: auto;
 }
 
 .entry-day-categories {
+  flex: 1 1 260px;
+  min-width: 0;
   justify-content: flex-end;
 }
 

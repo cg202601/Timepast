@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { format, subDays } from "date-fns";
 import type {
   EventType,
   StickyNote,
@@ -10,6 +11,7 @@ import type {
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 const memory = {
+  retentionDays: 30,
   eventTypes: [
     { id: 1, name: "深度工作", color: "#3b82f6", sortOrder: 1, pinned: true, archived: false },
     { id: 2, name: "学习", color: "#10b981", sortOrder: 2, pinned: true, archived: false },
@@ -21,6 +23,20 @@ const memory = {
 };
 
 let nextId = 100;
+
+function retentionCutoff(days: number): string {
+  return format(subDays(new Date(), days - 1), "yyyy-MM-dd");
+}
+
+function validateRetentionDays(days: number): void {
+  if (![7, 15, 25, 30].includes(days)) throw new Error("保留期限只能是 7、15、25 或 30 天");
+}
+
+function purgeExpiredEntries(): number {
+  const before = memory.entries.length;
+  memory.entries = memory.entries.filter((item) => item.entryDate >= retentionCutoff(memory.retentionDays));
+  return before - memory.entries.length;
+}
 
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   if (isTauri) return invoke<T>(command, args);
@@ -57,9 +73,26 @@ async function fallback<T>(command: string, args?: Record<string, unknown>): Pro
       );
       return undefined as T;
     case "list_time_entries":
+      purgeExpiredEntries();
       return memory.entries as T;
+    case "get_entry_retention_days":
+      return memory.retentionDays as T;
+    case "count_expired_entries": {
+      const days = args?.days as number;
+      validateRetentionDays(days);
+      return memory.entries.filter((item) => item.entryDate < retentionCutoff(days)).length as T;
+    }
+    case "set_entry_retention_days": {
+      const days = args?.days as number;
+      validateRetentionDays(days);
+      memory.retentionDays = days;
+      return purgeExpiredEntries() as T;
+    }
     case "save_time_entry": {
       const input = args?.entry as TimeEntryInput;
+      if (input.entryDate < retentionCutoff(memory.retentionDays)) {
+        throw new Error(`只能保存最近 ${memory.retentionDays} 天内的打卡记录`);
+      }
       const event = memory.eventTypes.find((item) => item.id === input.eventTypeId) ?? memory.eventTypes[0];
       const entry: TimeEntry = {
         id: input.id ?? nextId++,
@@ -124,6 +157,9 @@ export const api = {
   listTimeEntries: () => call<TimeEntry[]>("list_time_entries"),
   saveTimeEntry: (entry: TimeEntryInput) => call<number>("save_time_entry", { entry }),
   deleteTimeEntry: (id: number) => call<void>("delete_time_entry", { id }),
+  getEntryRetentionDays: () => call<number | null>("get_entry_retention_days"),
+  countExpiredEntries: (days: number) => call<number>("count_expired_entries", { days }),
+  setEntryRetentionDays: (days: number) => call<number>("set_entry_retention_days", { days }),
   listNotes: () => call<StickyNote[]>("list_notes"),
   getNote: (id: number) => call<StickyNote>("get_note", { id }),
   saveNote: (note: StickyNoteInput) => call<number>("save_note", { note }),

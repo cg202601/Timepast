@@ -1,4 +1,4 @@
-use chrono::{NaiveDate, Utc};
+use chrono::{Local, NaiveDate, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -99,8 +99,22 @@ fn init_db(conn: &Connection) -> Result<(), AppError> {
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
         "#,
     )?;
+
+    // Existing users must choose a retention period before old records are removed.
+    // A fresh database starts with the longest supported period.
+    if retention_days(conn)?.is_none() {
+        let existing_entries: i64 = conn.query_row("SELECT COUNT(*) FROM time_entries", [], |row| row.get(0))?;
+        if existing_entries == 0 {
+            conn.execute("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('entry_retention_days', '30')", [])?;
+        }
+    }
+    purge_expired_entries(conn)?;
 
     merge_legacy_overnight_entries(conn)?;
 
@@ -181,6 +195,64 @@ fn normalize_entry_date(value: &str) -> Result<String, AppError> {
     let date = NaiveDate::parse_from_str(&normalized, "%Y-%m-%d")
         .map_err(|_| AppError::Invalid("entry date must use YYYY-MM-DD".to_string()))?;
     Ok(date.format("%Y-%m-%d").to_string())
+}
+
+fn validate_retention_days(days: i64) -> Result<(), AppError> {
+    if matches!(days, 7 | 15 | 25 | 30) { Ok(()) }
+    else { Err(AppError::Invalid("retention must be 7, 15, 25, or 30 days".into())) }
+}
+
+fn retention_cutoff_on(today: NaiveDate, days: i64) -> Result<String, AppError> {
+    validate_retention_days(days)?;
+    Ok((today - chrono::Duration::days(days - 1)).format("%Y-%m-%d").to_string())
+}
+
+fn retention_cutoff(days: i64) -> Result<String, AppError> {
+    retention_cutoff_on(Local::now().date_naive(), days)
+}
+
+fn retention_days(conn: &Connection) -> Result<Option<i64>, AppError> {
+    let stored: Option<String> = conn.query_row(
+        "SELECT value FROM app_settings WHERE key = 'entry_retention_days'", [], |row| row.get(0)
+    ).optional()?;
+    stored.map(|value| {
+        let days = value.parse::<i64>().map_err(|_| AppError::Invalid("invalid stored retention setting".into()))?;
+        validate_retention_days(days)?;
+        Ok(days)
+    }).transpose()
+}
+
+fn purge_expired_entries(conn: &Connection) -> Result<usize, AppError> {
+    let Some(days) = retention_days(conn)? else { return Ok(0); };
+    Ok(conn.execute("DELETE FROM time_entries WHERE entry_date < ?1", params![retention_cutoff(days)?])?)
+}
+
+#[tauri::command]
+fn get_entry_retention_days(db: State<Db>) -> Result<Option<i64>, AppError> {
+    with_conn(&db, retention_days)
+}
+
+#[tauri::command]
+fn count_expired_entries(db: State<Db>, days: i64) -> Result<i64, AppError> {
+    let cutoff = retention_cutoff(days)?;
+    with_conn(&db, |conn| Ok(conn.query_row(
+        "SELECT COUNT(*) FROM time_entries WHERE entry_date < ?1", params![cutoff], |row| row.get(0)
+    )?))
+}
+
+#[tauri::command]
+fn set_entry_retention_days(db: State<Db>, days: i64) -> Result<usize, AppError> {
+    let cutoff = retention_cutoff(days)?;
+    with_conn(&db, |conn| {
+        let transaction = conn.unchecked_transaction()?;
+        transaction.execute(
+            "INSERT INTO app_settings (key, value) VALUES ('entry_retention_days', ?1) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![days.to_string()],
+        )?;
+        let deleted = transaction.execute("DELETE FROM time_entries WHERE entry_date < ?1", params![cutoff])?;
+        transaction.commit()?;
+        Ok(deleted)
+    })
 }
 
 fn validate_time_entry(entry: &TimeEntryInput) -> Result<(), AppError> {
@@ -282,6 +354,7 @@ fn archive_event_type(db: State<Db>, id: i64) -> Result<(), AppError> {
 #[tauri::command]
 fn list_time_entries(db: State<Db>) -> Result<Vec<TimeEntry>, AppError> {
     with_conn(&db, |conn| {
+        purge_expired_entries(conn)?;
         let mut stmt = conn.prepare(
             r#"
             SELECT te.id, te.entry_date, te.start_time, te.end_time, te.event_type_id,
@@ -314,6 +387,11 @@ fn save_time_entry(db: State<Db>, entry: TimeEntryInput) -> Result<i64, AppError
     validate_time_entry(&entry)?;
     let entry_date = normalize_entry_date(&entry.entry_date)?;
     with_conn(&db, |conn| {
+        if let Some(days) = retention_days(conn)? {
+            if entry_date < retention_cutoff(days)? {
+                return Err(AppError::Invalid(format!("只能保存最近 {days} 天内的打卡记录")));
+            }
+        }
         if entry.id.unwrap_or(0) == 0 {
             conn.execute(
                 "INSERT INTO time_entries (entry_date, start_time, end_time, event_type_id, note, source_mode, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -680,6 +758,9 @@ pub fn run() {
             list_time_entries,
             save_time_entry,
             delete_time_entry,
+            get_entry_retention_days,
+            count_expired_entries,
+            set_entry_retention_days,
             list_notes,
             get_note,
             save_note,
@@ -696,6 +777,49 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retention_includes_today_and_rejects_other_periods() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 28).unwrap();
+        assert_eq!(retention_cutoff_on(today, 7).unwrap(), "2026-10-22");
+        assert_eq!(retention_cutoff_on(today, 15).unwrap(), "2026-10-14");
+        assert_eq!(retention_cutoff_on(today, 25).unwrap(), "2026-10-04");
+        assert_eq!(retention_cutoff_on(today, 30).unwrap(), "2026-09-29");
+        assert!(retention_cutoff_on(today, 31).is_err());
+    }
+
+    #[test]
+    fn existing_records_are_not_deleted_before_retention_is_chosen() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE time_entries (id INTEGER PRIMARY KEY, entry_date TEXT NOT NULL, start_time TEXT NOT NULL, end_time TEXT NOT NULL, event_type_id INTEGER NOT NULL, note TEXT NOT NULL, source_mode TEXT NOT NULL, created_at TEXT NOT NULL);
+             INSERT INTO time_entries (entry_date, start_time, end_time, event_type_id, note, source_mode, created_at) VALUES ('2020-01-01', '09:00', '10:00', 1, '', 'manual', '2020-01-01');"
+        ).unwrap();
+        init_db(&conn).unwrap();
+        assert_eq!(retention_days(&conn).unwrap(), None);
+        assert_eq!(purge_expired_entries(&conn).unwrap(), 0);
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM time_entries", [], |row| row.get(0)).unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn purge_removes_only_dates_before_the_inclusive_cutoff() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_db(&conn).unwrap();
+        conn.execute("UPDATE app_settings SET value = '7' WHERE key = 'entry_retention_days'", []).unwrap();
+        let today = Local::now().date_naive();
+        let expired = (today - chrono::Duration::days(7)).format("%Y-%m-%d").to_string();
+        let boundary = retention_cutoff(7).unwrap();
+        for date in [&expired, &boundary] {
+            conn.execute(
+                "INSERT INTO time_entries (entry_date, start_time, end_time, event_type_id, note, source_mode, created_at) VALUES (?1, '09:00', '10:00', 1, '', 'manual', '2026-01-01')",
+                params![date],
+            ).unwrap();
+        }
+        assert_eq!(purge_expired_entries(&conn).unwrap(), 1);
+        let remaining: String = conn.query_row("SELECT entry_date FROM time_entries", [], |row| row.get(0)).unwrap();
+        assert_eq!(remaining, boundary);
+    }
 
     fn entry(start_time: &str, end_time: &str) -> TimeEntryInput {
         TimeEntryInput {

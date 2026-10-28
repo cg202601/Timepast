@@ -24,6 +24,20 @@ export function useAppData(onError: (message: string) => void) {
   }, [refresh, onError]);
 
   useEffect(() => {
+    let timer: number;
+    const scheduleNextDay = () => {
+      const now = new Date();
+      const nextDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 1);
+      timer = window.setTimeout(() => {
+        refresh().catch((error) => onError(String(error)));
+        scheduleNextDay();
+      }, nextDay.getTime() - now.getTime());
+    };
+    scheduleNextDay();
+    return () => window.clearTimeout(timer);
+  }, [refresh, onError]);
+
+  useEffect(() => {
     const pending = listen("note-changed", () => refresh().catch(() => undefined));
     return () => {
       pending.then((off) => off()).catch(() => undefined);
