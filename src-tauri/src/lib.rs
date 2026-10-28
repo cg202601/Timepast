@@ -13,6 +13,7 @@ use tauri::{
     Position, Size, State, WindowEvent,
 };
 use thiserror::Error;
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
@@ -54,6 +55,13 @@ struct Note { id: i64, content: String, color: String, x: i64, y: i64, width: i6
 #[serde(rename_all = "camelCase")]
 struct NoteInput { id: Option<i64>, content: String, color: String, x: i64, y: i64, width: i64, height: i64, collapsed: bool, pinned: bool, font_size: i64, style_json: String }
 type Db = Arc<Mutex<Connection>>;
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ShortcutStatus { quick_start: bool, new_note: bool }
+
+#[tauri::command]
+fn get_shortcut_status(status: State<'_, ShortcutStatus>) -> ShortcutStatus { *status }
 
 fn db_path(app: &tauri::App) -> Result<PathBuf, AppError> {
     let dir = app.path().app_data_dir().map_err(|e| AppError::Invalid(e.to_string()))?;
@@ -766,6 +774,29 @@ pub fn run() {
             init_db(&conn)?;
             app.manage(Arc::new(Mutex::new(conn)));
             setup_tray(app)?;
+            let quick_start = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyT);
+            let new_note = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyN);
+            app.handle().plugin(
+                tauri_plugin_global_shortcut::Builder::new()
+                    .with_handler(move |app, shortcut, event| {
+                        if event.state() != ShortcutState::Pressed { return; }
+                        if shortcut == &quick_start {
+                            let _ = app.emit("shortcut-quick-start", ());
+                        } else if shortcut == &new_note {
+                            let _ = app.emit("shortcut-new-note", ());
+                        }
+                    })
+                    .build(),
+            )?;
+            let quick_start_registered = match app.global_shortcut().register(quick_start) {
+                Ok(()) => true,
+                Err(error) => { eprintln!("Quick start shortcut unavailable: {error}"); false }
+            };
+            let new_note_registered = match app.global_shortcut().register(new_note) {
+                Ok(()) => true,
+                Err(error) => { eprintln!("New note shortcut unavailable: {error}"); false }
+            };
+            app.manage(ShortcutStatus { quick_start: quick_start_registered, new_note: new_note_registered });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -788,6 +819,7 @@ pub fn run() {
             set_main_window_mode,
             open_note_window,
             set_note_always_on_top
+            ,get_shortcut_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running TimePast");
