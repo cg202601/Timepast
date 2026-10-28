@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.1.10 - 2026-10-29
+
+### Added
+- Added a configurable time-entry retention period of 7, 15, 25, or 30 days.
+- New databases default to 30 days. Existing databases keep their records until the user chooses a retention period.
+- Show the number of older records before applying a retention period and ask for confirmation before deleting them.
+
 ## v0.1.9 - 2026-08-04
 
 ### Security
