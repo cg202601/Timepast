@@ -13,7 +13,7 @@ import { isAppNoteCollapsed, noteTitle, withAppNoteCollapsed, withNoteTitle } fr
 import { insertHtmlAtSelection, normalizeStoredRichText, sanitizeClipboardHtml } from "./lib/richText";
 import { finishActiveTimer } from "./lib/timerActions";
 import { currentTime, isoToTimeInput, normalizeDateInput, todayDate } from "./lib/time";
-import type { ActiveTimer, EventType, StickyNote as Note, TimeEntry, TimeEntryInput, ViewKey } from "./lib/types";
+import type { ActiveTimer, EventType, ShortcutAction, ShortcutStatus, StickyNote as Note, TimeEntry, TimeEntryInput, ViewKey } from "./lib/types";
 import "./styles.css";
 
 const noteColors = ["#fff7c2", "#dbeafe", "#dcfce7", "#fde2e2", "#f3e8ff", "#f8fafc"];
@@ -265,15 +265,51 @@ function SettingsView({ events, refresh, theme, setTheme, brightness, setBrightn
   </section>;
 }
 function ShortcutSettings({ events }: { events: EventType[] }) {
-  const [status, setStatus] = useState<{ quickStart: boolean; newNote: boolean } | null>(null);
-  useEffect(() => { api.getShortcutStatus().then(setStatus).catch(() => setStatus({ quickStart: false, newNote: false })); }, []);
+  const [status, setStatus] = useState<ShortcutStatus | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  useEffect(() => { api.getShortcutStatus().then(setStatus).catch((error) => setMessage(`读取快捷键失败：${String(error)}`)); }, []);
+  const save = async (action: ShortcutAction, shortcut: string) => {
+    if (saving) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      const next = await api.setGlobalShortcut(action, shortcut);
+      setStatus(next);
+      setMessage("快捷键已保存并立即生效");
+    } catch (error) {
+      setMessage(`设置失败：${String(error)}`);
+    } finally {
+      setSaving(false);
+    }
+  };
   const firstEvent = events.find((item) => item.pinned && !item.archived) ?? events.find((item) => !item.archived);
   return <div className="panel"><div className="panel-head"><h2>全局快捷键</h2></div>
-    <p className="muted">TimePast 运行时，在其他窗口也能使用。</p>
-    <div className="shortcut-row"><span><strong>快速开始打卡</strong><small>开始首个置顶事件{firstEvent ? `（${firstEvent.name}）` : ""}；已有计时则显示小条</small></span><kbd>Ctrl + Alt + T</kbd><em>{status?.quickStart ? "可用" : "未启用或被占用"}</em></div>
-    <div className="shortcut-row"><span><strong>新建桌面便签</strong><small>创建后立即打开便签窗口</small></span><kbd>Ctrl + Alt + N</kbd><em>{status?.newNote ? "可用" : "未启用或被占用"}</em></div>
-    <p className="muted">若快捷键被其他软件占用，请关闭冲突软件后重新启动 TimePast。</p>
+    <p className="muted">点击录入框后按组合键，保存即可生效。支持 Ctrl、Alt、Shift 加字母、数字或 F1–F12，至少包含 Ctrl 或 Alt。</p>
+    {status && <><ShortcutEditor action="quickStart" label="快速开始打卡" description={`开始首个置顶事件${firstEvent ? `（${firstEvent.name}）` : ""}；已有计时则显示小条`} current={status.quickStartKey} registered={status.quickStart} defaultKey="Ctrl+Alt+T" saving={saving} onSave={save} /><ShortcutEditor action="newNote" label="新建桌面便签" description="创建后立即打开便签窗口" current={status.newNoteKey} registered={status.newNote} defaultKey="Ctrl+Alt+N" saving={saving} onSave={save} /></>}
+    {message && <p className="shortcut-message" role="status">{message}</p>}
   </div>;
+}
+function ShortcutEditor({ action, label, description, current, registered, defaultKey, saving, onSave }: { action: ShortcutAction; label: string; description: string; current: string; registered: boolean; defaultKey: string; saving: boolean; onSave: (action: ShortcutAction, shortcut: string) => Promise<void> }) {
+  const [draft, setDraft] = useState(current);
+  const [capturing, setCapturing] = useState(false);
+  const [error, setError] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { setDraft(current); }, [current]);
+  const capture = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    event.preventDefault();
+    if (event.repeat || event.nativeEvent.isComposing) return;
+    if (event.key === "Escape") { setDraft(current); setError(""); inputRef.current?.blur(); return; }
+    if (["Control", "Alt", "Shift", "Meta"].includes(event.key)) return;
+    if (event.metaKey || (!event.ctrlKey && !event.altKey)) { setError("请至少按住 Ctrl 或 Alt，不能使用 Win 键"); return; }
+    const code = event.code;
+    const key = /^Key[A-Z]$/.test(code) ? code.slice(3) : /^Digit[0-9]$/.test(code) ? code.slice(5) : /^F([1-9]|1[0-2])$/.test(code) ? code : null;
+    if (!key) { setError("仅支持字母、数字或 F1–F12"); return; }
+    setDraft([event.ctrlKey && "Ctrl", event.altKey && "Alt", event.shiftKey && "Shift", key].filter(Boolean).join("+"));
+    setError("");
+    inputRef.current?.blur();
+  };
+  return <div className="shortcut-row"><span><strong>{label}</strong><small>{description}</small><small>当前：<kbd>{current.split("+").join(" + ")}</kbd>　{registered ? "可用" : "未注册，可能被占用"}</small></span><div className="shortcut-edit"><input ref={inputRef} className="shortcut-capture" aria-label={`${label}快捷键录入`} readOnly value={capturing ? "请按组合键…" : draft.split("+").join(" + ")} onFocus={() => setCapturing(true)} onBlur={() => setCapturing(false)} onKeyDown={capture} /><button className="primary" disabled={saving || (draft === current && registered)} onClick={() => void onSave(action, draft)}>保存</button><button disabled={saving || (current === defaultKey && registered)} onClick={() => { setDraft(defaultKey); setError(""); void onSave(action, defaultKey); }}>恢复默认</button></div>{error && <small className="shortcut-error">{error}</small>}</div>;
 }
 function Empty({ text }: { text: string }) { return <div className="empty"><span>{text}</span></div>; }
 createRoot(document.getElementById("root")!).render(<App />);

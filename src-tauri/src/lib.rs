@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+use std::str::FromStr;
 use std::time::Duration;
 use std::sync::{Arc, Mutex};
 use tauri::menu::{Menu, MenuItem};
@@ -13,7 +14,7 @@ use tauri::{
     Position, Size, State, WindowEvent,
 };
 use thiserror::Error;
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
@@ -56,12 +57,124 @@ struct Note { id: i64, content: String, color: String, x: i64, y: i64, width: i6
 struct NoteInput { id: Option<i64>, content: String, color: String, x: i64, y: i64, width: i64, height: i64, collapsed: bool, pinned: bool, font_size: i64, style_json: String }
 type Db = Arc<Mutex<Connection>>;
 
-#[derive(Clone, Copy, Serialize)]
+const QUICK_START_KEY: &str = "shortcut_quick_start";
+const NEW_NOTE_KEY: &str = "shortcut_new_note";
+const DEFAULT_QUICK_START: &str = "Ctrl+Alt+T";
+const DEFAULT_NEW_NOTE: &str = "Ctrl+Alt+N";
+
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ShortcutStatus { quick_start: bool, new_note: bool }
+struct ShortcutStatus { quick_start: bool, new_note: bool, quick_start_key: String, new_note_key: String }
+
+#[derive(Clone)]
+struct ShortcutBinding { key: String, shortcut: Shortcut, registered: bool }
+
+struct ShortcutBindings { quick_start: ShortcutBinding, new_note: ShortcutBinding }
+
+impl ShortcutBindings {
+    fn status(&self) -> ShortcutStatus {
+        ShortcutStatus {
+            quick_start: self.quick_start.registered,
+            new_note: self.new_note.registered,
+            quick_start_key: self.quick_start.key.clone(),
+            new_note_key: self.new_note.key.clone(),
+        }
+    }
+}
+
+struct ShortcutRegistry { bindings: Mutex<ShortcutBindings>, update: Mutex<()> }
+
+fn parse_shortcut(value: &str) -> Result<(String, Shortcut), AppError> {
+    let tokens: Vec<_> = value.split('+').map(str::trim).collect();
+    if !(2..=4).contains(&tokens.len()) { return Err(AppError::Invalid("快捷键需要修饰键和一个按键".into())); }
+    let mut ctrl = false;
+    let mut alt = false;
+    let mut shift = false;
+    for token in &tokens[..tokens.len() - 1] {
+        match token.to_ascii_lowercase().as_str() {
+            "ctrl" if !ctrl => ctrl = true,
+            "alt" if !alt => alt = true,
+            "shift" if !shift => shift = true,
+            _ => return Err(AppError::Invalid("快捷键只能使用 Ctrl、Alt、Shift 各一次".into())),
+        }
+    }
+    if !ctrl && !alt { return Err(AppError::Invalid("快捷键至少需要 Ctrl 或 Alt".into())); }
+    let raw = tokens[tokens.len() - 1].to_ascii_uppercase();
+    let valid_key = (raw.len() == 1 && raw.chars().all(|ch| ch.is_ascii_alphanumeric()))
+        || (raw.starts_with('F') && raw[1..].parse::<u8>().is_ok_and(|number| (1..=12).contains(&number)));
+    if !valid_key { return Err(AppError::Invalid("按键仅支持字母、数字或 F1–F12".into())); }
+    let key = if raw.starts_with('F') && raw.len() > 1 { format!("F{}", raw[1..].parse::<u8>().unwrap()) } else { raw };
+    let canonical = [ctrl.then_some("Ctrl"), alt.then_some("Alt"), shift.then_some("Shift"), Some(key.as_str())]
+        .into_iter().flatten().collect::<Vec<_>>().join("+");
+    let shortcut = Shortcut::from_str(&canonical).map_err(|error| AppError::Invalid(error.to_string()))?;
+    Ok((canonical, shortcut))
+}
+
+fn load_shortcut(conn: &Connection, setting_key: &str, default: &str) -> Result<ShortcutBinding, AppError> {
+    let stored: Option<String> = conn.query_row("SELECT value FROM app_settings WHERE key = ?1", params![setting_key], |row| row.get(0)).optional()?;
+    let (key, shortcut) = match parse_shortcut(stored.as_deref().unwrap_or(default)) {
+        Ok(binding) => binding,
+        Err(error) => {
+            eprintln!("Invalid saved shortcut {setting_key}: {error}");
+            parse_shortcut(default)?
+        }
+    };
+    Ok(ShortcutBinding { key, shortcut, registered: false })
+}
 
 #[tauri::command]
-fn get_shortcut_status(status: State<'_, ShortcutStatus>) -> ShortcutStatus { *status }
+fn get_shortcut_status(registry: State<'_, ShortcutRegistry>) -> Result<ShortcutStatus, AppError> {
+    let bindings = registry.bindings.lock().map_err(|_| AppError::Invalid("shortcut lock poisoned".into()))?;
+    Ok(bindings.status())
+}
+
+#[tauri::command]
+fn set_global_shortcut(app: AppHandle, db: State<'_, Db>, registry: State<'_, ShortcutRegistry>, action: String, shortcut: String) -> Result<ShortcutStatus, AppError> {
+    let _update = registry.update.lock().map_err(|_| AppError::Invalid("shortcut update lock poisoned".into()))?;
+    let (key, candidate) = parse_shortcut(&shortcut)?;
+    let (setting_key, previous) = {
+        let bindings = registry.bindings.lock().map_err(|_| AppError::Invalid("shortcut lock poisoned".into()))?;
+        match action.as_str() {
+            "quickStart" => {
+                if candidate == bindings.new_note.shortcut { return Err(AppError::Invalid("两个功能不能使用相同的快捷键".into())); }
+                (QUICK_START_KEY, bindings.quick_start.clone())
+            }
+            "newNote" => {
+                if candidate == bindings.quick_start.shortcut { return Err(AppError::Invalid("两个功能不能使用相同的快捷键".into())); }
+                (NEW_NOTE_KEY, bindings.new_note.clone())
+            }
+            _ => return Err(AppError::Invalid("未知快捷键功能".into())),
+        }
+    };
+    if candidate == previous.shortcut && previous.registered {
+        let bindings = registry.bindings.lock().map_err(|_| AppError::Invalid("shortcut lock poisoned".into()))?;
+        return Ok(bindings.status());
+    }
+    app.global_shortcut().register(candidate).map_err(|error| AppError::Invalid(format!("快捷键无法注册，可能已被其他软件占用：{error}")))?;
+    if previous.registered && candidate != previous.shortcut {
+        if let Err(error) = app.global_shortcut().unregister(previous.shortcut) {
+            let _ = app.global_shortcut().unregister(candidate);
+            return Err(AppError::Invalid(format!("无法替换原快捷键：{error}")));
+        }
+    }
+    let save_result = (|| -> Result<(), AppError> {
+        let conn = db.lock().map_err(|_| AppError::Invalid("database lock poisoned".into()))?;
+        conn.execute(
+            "INSERT INTO app_settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![setting_key, &key],
+        )?;
+        Ok(())
+    })();
+    if let Err(error) = save_result {
+        let _ = app.global_shortcut().unregister(candidate);
+        if previous.registered && candidate != previous.shortcut { let _ = app.global_shortcut().register(previous.shortcut); }
+        return Err(error);
+    }
+    let mut bindings = registry.bindings.lock().map_err(|_| AppError::Invalid("shortcut lock poisoned".into()))?;
+    let updated = ShortcutBinding { key, shortcut: candidate, registered: true };
+    if action == "quickStart" { bindings.quick_start = updated; } else { bindings.new_note = updated; }
+    Ok(bindings.status())
+}
 
 fn db_path(app: &tauri::App) -> Result<PathBuf, AppError> {
     let dir = app.path().app_data_dir().map_err(|e| AppError::Invalid(e.to_string()))?;
@@ -772,22 +885,32 @@ pub fn run() {
             let path = db_path(app)?;
             let conn = Connection::open(path)?;
             init_db(&conn)?;
+            let bindings = ShortcutBindings {
+                quick_start: load_shortcut(&conn, QUICK_START_KEY, DEFAULT_QUICK_START)?,
+                new_note: load_shortcut(&conn, NEW_NOTE_KEY, DEFAULT_NEW_NOTE)?,
+            };
             app.manage(Arc::new(Mutex::new(conn)));
+            app.manage(ShortcutRegistry { bindings: Mutex::new(bindings), update: Mutex::new(()) });
             setup_tray(app)?;
-            let quick_start = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyT);
-            let new_note = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyN);
             app.handle().plugin(
                 tauri_plugin_global_shortcut::Builder::new()
                     .with_handler(move |app, shortcut, event| {
                         if event.state() != ShortcutState::Pressed { return; }
-                        if shortcut == &quick_start {
-                            let _ = app.emit("shortcut-quick-start", ());
-                        } else if shortcut == &new_note {
-                            let _ = app.emit("shortcut-new-note", ());
-                        }
+                        let registry = app.state::<ShortcutRegistry>();
+                        let action = registry.bindings.lock().ok().and_then(|bindings| {
+                            if bindings.quick_start.registered && shortcut == &bindings.quick_start.shortcut { Some("shortcut-quick-start") }
+                            else if bindings.new_note.registered && shortcut == &bindings.new_note.shortcut { Some("shortcut-new-note") }
+                            else { None }
+                        });
+                        if let Some(event_name) = action { let _ = app.emit(event_name, ()); }
                     })
                     .build(),
             )?;
+            let (quick_start, new_note) = {
+                let registry = app.state::<ShortcutRegistry>();
+                let bindings = registry.bindings.lock().expect("shortcut lock poisoned during setup");
+                (bindings.quick_start.shortcut, bindings.new_note.shortcut)
+            };
             let quick_start_registered = match app.global_shortcut().register(quick_start) {
                 Ok(()) => true,
                 Err(error) => { eprintln!("Quick start shortcut unavailable: {error}"); false }
@@ -796,7 +919,11 @@ pub fn run() {
                 Ok(()) => true,
                 Err(error) => { eprintln!("New note shortcut unavailable: {error}"); false }
             };
-            app.manage(ShortcutStatus { quick_start: quick_start_registered, new_note: new_note_registered });
+            let registry = app.state::<ShortcutRegistry>();
+            let mut bindings = registry.bindings.lock().expect("shortcut lock poisoned during setup");
+            bindings.quick_start.registered = quick_start_registered;
+            bindings.new_note.registered = new_note_registered;
+            drop(bindings);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -818,8 +945,9 @@ pub fn run() {
             save_window_geometry,
             set_main_window_mode,
             open_note_window,
-            set_note_always_on_top
-            ,get_shortcut_status
+            set_note_always_on_top,
+            get_shortcut_status,
+            set_global_shortcut
         ])
         .run(tauri::generate_context!())
         .expect("error while running TimePast");
@@ -827,6 +955,28 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shortcut_parser_normalizes_and_rejects_unsafe_combinations() {
+        let (key, parsed) = parse_shortcut("alt+ctrl+shift+f5").unwrap();
+        assert_eq!(key, "Ctrl+Alt+Shift+F5");
+        assert_eq!(parsed, Shortcut::from_str("Ctrl+Alt+Shift+F5").unwrap());
+        assert!(parse_shortcut("Shift+T").is_err());
+        assert!(parse_shortcut("Ctrl+Alt").is_err());
+        assert!(parse_shortcut("Ctrl+Ctrl+T").is_err());
+        assert!(parse_shortcut("Ctrl+Alt+F13").is_err());
+    }
+
+    #[test]
+    fn saved_shortcut_loads_from_existing_settings_table() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);").unwrap();
+        conn.execute("INSERT INTO app_settings (key, value) VALUES (?1, ?2)", params![QUICK_START_KEY, "Alt+Shift+7"]).unwrap();
+        let saved = load_shortcut(&conn, QUICK_START_KEY, DEFAULT_QUICK_START).unwrap();
+        let default = load_shortcut(&conn, NEW_NOTE_KEY, DEFAULT_NEW_NOTE).unwrap();
+        assert_eq!(saved.key, "Alt+Shift+7");
+        assert_eq!(default.key, DEFAULT_NEW_NOTE);
+    }
 
     #[test]
     fn keeps_edge_positions_when_clamping_saved_mini_window() {
