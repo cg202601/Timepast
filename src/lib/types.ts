@@ -1,5 +1,14 @@
 export type ViewKey = "today" | "entries" | "notes" | "settings";
 
+export type ShortcutAction = "quickStart" | "newNote";
+
+export interface ShortcutStatus {
+  quickStart: boolean;
+  newNote: boolean;
+  quickStartKey: string;
+  newNoteKey: string;
+}
+
 export interface EventType {
   id: number;
   name: string;

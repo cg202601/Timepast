@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { format, subDays } from "date-fns";
 import type {
   EventType,
+  ShortcutAction,
+  ShortcutStatus,
   StickyNote,
   StickyNoteInput,
   TimeEntry,
@@ -12,6 +14,7 @@ const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
 
 const memory = {
   retentionDays: 30,
+  shortcuts: { quickStart: false, newNote: false, quickStartKey: "Ctrl+Alt+T", newNoteKey: "Ctrl+Alt+N" } as ShortcutStatus,
   eventTypes: [
     { id: 1, name: "深度工作", color: "#3b82f6", sortOrder: 1, pinned: true, archived: false },
     { id: 2, name: "学习", color: "#10b981", sortOrder: 2, pinned: true, archived: false },
@@ -78,7 +81,16 @@ async function fallback<T>(command: string, args?: Record<string, unknown>): Pro
     case "get_entry_retention_days":
       return memory.retentionDays as T;
     case "get_shortcut_status":
-      return { quickStart: false, newNote: false } as T;
+      return { ...memory.shortcuts } as T;
+    case "set_global_shortcut": {
+      const action = args?.action as ShortcutAction;
+      const key = args?.shortcut as string;
+      if (action !== "quickStart" && action !== "newNote") throw new Error("未知快捷键功能");
+      if (key === (action === "quickStart" ? memory.shortcuts.newNoteKey : memory.shortcuts.quickStartKey)) throw new Error("两个功能不能使用相同的快捷键");
+      if (action === "quickStart") memory.shortcuts.quickStartKey = key;
+      else memory.shortcuts.newNoteKey = key;
+      return { ...memory.shortcuts } as T;
+    }
     case "count_expired_entries": {
       const days = args?.days as number;
       validateRetentionDays(days);
@@ -152,7 +164,8 @@ async function fallback<T>(command: string, args?: Record<string, unknown>): Pro
 }
 
 export const api = {
-  getShortcutStatus: () => call<{ quickStart: boolean; newNote: boolean }>("get_shortcut_status"),
+  getShortcutStatus: () => call<ShortcutStatus>("get_shortcut_status"),
+  setGlobalShortcut: (action: ShortcutAction, shortcut: string) => call<ShortcutStatus>("set_global_shortcut", { action, shortcut }),
   listEventTypes: () => call<EventType[]>("list_event_types"),
   saveEventType: (event: EventType) => call<number>("save_event_type", { event }),
   archiveEventType: (id: number) => call<void>("archive_event_type", { id }),

@@ -1310,8 +1310,12 @@ body.note-window-page .desktop-note.collapsed .desktop-note-toolbar {
 .shortcut-row strong { font-size: 13px; }
 .shortcut-row small { color: #647084; font-size: 11px; }
 .shortcut-row kbd { padding: 5px 7px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc; font-size: 11px; white-space: nowrap; }
-.shortcut-row em { font-size: 11px; font-style: normal; color: #647084; }
-.shortcut-row + .muted { margin-top: 12px; }
+.shortcut-edit { display: flex; width: 100%; gap: 6px; flex-wrap: wrap; }
+.shortcut-edit button { padding: 6px 9px; font-size: 12px; }
+.shortcut-capture { flex: 1 1 140px; width: 140px; min-width: 0; padding: 6px 8px; cursor: pointer; }
+.shortcut-capture:focus { border-color: #2563eb; box-shadow: 0 0 0 2px #bfdbfe; }
+.shortcut-error, .shortcut-message { color: #b91c1c; font-size: 12px; }
+.shortcut-message { margin-top: 12px; }
 .app[data-theme="night"] .insights-tabs, .app[data-theme="night"] .day-track, .app[data-theme="night"] .category-summary-track, .app[data-theme="night"] .shortcut-row kbd { background: #334155; color: #e2e8f0; }
 @media (max-width: 760px) {
   .insights-metrics { grid-template-columns: 1fr; }
