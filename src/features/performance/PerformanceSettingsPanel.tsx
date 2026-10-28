@@ -7,7 +7,7 @@ import type { EventType, PerformanceSettings, WorkType } from "../../lib/types";
 const weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 const blank = (): WorkType => ({ id: 0, name: "", unit: "张", decimals: 0, color: "#2563eb", hourlyTarget: 1, archived: false, eventTypeIds: [], weekFactors: [1, 1, 1, 1, 1, 1, 1] });
 
-export function PerformanceSettingsPanel({ events, refreshEntries, setStatus }: { events: EventType[]; refreshEntries: () => Promise<void>; setStatus: (message: string) => void }) {
+export function PerformanceSettingsPanel({ section, events, refreshEntries, setStatus }: { section: "retention" | "types"; events: EventType[]; refreshEntries: () => Promise<void>; setStatus: (message: string) => void }) {
   const [settings, setSettings] = useState<PerformanceSettings | null>(null);
   const [saved, setSaved] = useState<PerformanceSettings | null>(null);
   const [types, setTypes] = useState<WorkType[]>([]);
@@ -40,7 +40,7 @@ export function PerformanceSettingsPanel({ events, refreshEntries, setStatus }: 
   const cycle = settings ? cycleFor(todayDate(), settings.cycleStartDay) : null;
   const cutoff = settings ? entryCutoff(settings, todayDate()) : null;
   return <>
-    <div className="panel wide performance-settings"><div className="panel-head"><h2>工作效率与保留期限</h2></div>
+    {section === "retention" && <div className="panel wide performance-settings"><div className="panel-head"><h2>业绩周期与数据保留</h2></div>
       {settings ? <>
         <div className="performance-setting-grid">
           <label>每月业绩周期起始日<input type="number" min="1" max="31" value={settings.cycleStartDay} onChange={(event) => setSettings({ ...settings, cycleStartDay: Number(event.target.value) })} /></label>
@@ -52,8 +52,8 @@ export function PerformanceSettingsPanel({ events, refreshEntries, setStatus }: 
         {cutoff && cycle && cutoff > cycle.start && <p className="performance-warning">自定义期限不能覆盖完整周期；较早的打卡明细会清理，每日工作量汇总按独立期限保存。</p>}
         <button className="primary" disabled={busy || JSON.stringify(settings) === JSON.stringify(saved)} onClick={() => void saveSettings()}>{busy ? "正在保存…" : "保存周期与保留设置"}</button>
       </> : <p className="muted">正在读取设置…</p>}
-    </div>
-    <div className="panel wide performance-settings"><div className="panel-head"><h2>自定义工作类型</h2><button onClick={() => setEditing(blank())}>添加工作类型</button></div>
+    </div>}
+    {section === "types" && <div className="panel wide performance-settings"><div className="panel-head"><h2>自定义工作类型</h2><button onClick={() => setEditing(blank())}>添加工作类型</button></div>
       <p className="muted">每种类型独立设置单位和关联分类；不同单位不合并。同一分类关联多个类型时，投入时间会分别计入。</p>
       {types.map((item) => <div className="performance-type-row" key={item.id}><i style={{ background: item.color }} /><strong>{item.name}</strong><span>{item.unit} · 每小时基准 {item.hourlyTarget} {item.unit}</span><span>{item.archived ? "已归档" : "使用中"}</span><button onClick={() => setEditing({ ...item, eventTypeIds: [...item.eventTypeIds], weekFactors: [...item.weekFactors] })}>编辑</button><button onClick={() => void archive(item)}>{item.archived ? "恢复" : "归档"}</button></div>)}
       {!types.length && <p className="muted">还没有工作类型。添加后可为每个周期设定目标。</p>}
@@ -69,6 +69,6 @@ export function PerformanceSettingsPanel({ events, refreshEntries, setStatus }: 
         <div><strong>每周惯例</strong><div className="performance-week-grid">{weekdays.map((label, index) => <label key={label}>{label}<select value={editing.weekFactors[index]} onChange={(event) => setEditing({ ...editing, weekFactors: editing.weekFactors.map((factor, day) => day === index ? Number(event.target.value) : factor) })}><option value="1">正常</option><option value="0.5">半天</option><option value="0">休息</option></select></label>)}</div></div>
         <div className="performance-actions"><button className="primary" disabled={busy} onClick={() => void saveType()}>保存工作类型</button><button onClick={() => setEditing(null)}>取消</button></div>
       </div>}
-    </div>
+    </div>}
   </>;
 }
