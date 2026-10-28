@@ -77,6 +77,8 @@ async function fallback<T>(command: string, args?: Record<string, unknown>): Pro
       return memory.entries as T;
     case "get_entry_retention_days":
       return memory.retentionDays as T;
+    case "get_shortcut_status":
+      return { quickStart: false, newNote: false } as T;
     case "count_expired_entries": {
       const days = args?.days as number;
       validateRetentionDays(days);
@@ -150,6 +152,7 @@ async function fallback<T>(command: string, args?: Record<string, unknown>): Pro
 }
 
 export const api = {
+  getShortcutStatus: () => call<{ quickStart: boolean; newNote: boolean }>("get_shortcut_status"),
   listEventTypes: () => call<EventType[]>("list_event_types"),
   saveEventType: (event: EventType) => call<number>("save_event_type", { event }),
   archiveEventType: (id: number) => call<void>("archive_event_type", { id }),

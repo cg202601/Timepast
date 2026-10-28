@@ -2,9 +2,10 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Check, ChevronDown, Clock3, Edit3, LayoutDashboard, Maximize2, Minimize2, Palette, Pin, Play, Plus, Settings, Square, StickyNote, Trash2 } from "lucide-react";
+import { BarChart3, Check, ChevronDown, Clock3, Edit3, LayoutDashboard, Maximize2, Minimize2, Palette, Pin, Play, Plus, Settings, Square, StickyNote, Trash2 } from "lucide-react";
 import { MiniBar } from "./components/MiniBar";
 import { EntryList } from "./features/entries/EntryList";
+import { InsightsView } from "./features/insights/InsightsView";
 import { useActiveTimer } from "./hooks/useActiveTimer";
 import { useAppData } from "./hooks/useAppData";
 import { api } from "./lib/api";
@@ -19,6 +20,7 @@ const noteColors = ["#fff7c2", "#dbeafe", "#dcfce7", "#fde2e2", "#f3e8ff", "#f8f
 const views: Array<{ key: ViewKey; label: string; icon: React.ReactNode }> = [
   { key: "today", label: "今日", icon: <LayoutDashboard size={18} /> },
   { key: "entries", label: "打卡记录", icon: <Clock3 size={18} /> },
+  { key: "insights", label: "分类趋势", icon: <BarChart3 size={18} /> },
   { key: "notes", label: "桌贴便签", icon: <StickyNote size={18} /> },
   { key: "settings", label: "设置", icon: <Settings size={18} /> }
 ];
@@ -78,6 +80,29 @@ function App() {
     return () => { noteListener.then((off) => off()).catch(() => undefined); };
   }, [notes.length]);
 
+  useEffect(() => {
+    const startListener = listen("shortcut-quick-start", () => {
+      const selected = eventTypes.find((item) => item.pinned && !item.archived) ?? eventTypes.find((item) => !item.archived);
+      if (!activeTimer && !selected) {
+        setMini(false);
+        setView("settings");
+        setStatus("请先添加一个事件类型，再使用快速打卡快捷键");
+      } else {
+        if (!activeTimer && selected) {
+          setActiveTimer({ eventTypeId: selected.id, eventName: selected.name, eventColor: selected.color, startedAt: new Date().toISOString() });
+          setStatus(`已开始 ${selected.name}；再次按快捷键可显示计时小条`);
+        }
+        setMini(true);
+      }
+      getCurrentWindow().show().then(() => getCurrentWindow().setFocus()).catch((error) => setStatus(String(error)));
+    });
+    const noteListener = listen("shortcut-new-note", () => { createNote(true).then(() => setStatus("桌面便签已打开")).catch((error) => setStatus(String(error))); });
+    return () => {
+      startListener.then((off) => off()).catch(() => undefined);
+      noteListener.then((off) => off()).catch(() => undefined);
+    };
+  }, [activeTimer, eventTypes, notes.length, setActiveTimer]);
+
   if (mini) return <MiniBar events={quickEvents.length ? quickEvents : activeEvents} activeTimer={activeTimer} alwaysOnTop={miniAlwaysOnTop} edgeHide={miniEdgeHide} opacity={miniOpacity} onAlwaysOnTopChange={setMiniAlwaysOnTop} onEdgeHideChange={setMiniEdgeHide} onOpacityChange={setMiniOpacity} onStart={startTimer} onStop={() => activeTimer && finishActiveTimer(activeTimer, setActiveTimer, refresh, setStatus)} onNote={() => createNote(true)} onAddEvent={addQuickEvent} onExpand={() => setMini(false)} />;
 
   return <div className="app" data-theme={theme} style={{ filter: `brightness(${brightness}%)` }}>
@@ -91,6 +116,7 @@ function App() {
       <header className="topbar"><div><h1>{views.find((item) => item.key === view)?.label}</h1><p>{status || "记录时间、整理便签，数据只保存在本机。"}</p></div><div className="quick-events">{quickEvents.map((item) => <button className="chip" key={item.id} disabled={!!activeTimer} onClick={() => startTimer(item)}><span style={{ background: item.color }} />{item.name}</button>)}<button onClick={() => setMini(true)}><Minimize2 size={16} />小条</button></div></header>
       {view === "today" && <TodayView entries={entries} notes={notes} events={quickEvents} setView={setView} />}
       {view === "entries" && <EntriesView events={activeEvents} entries={entries} activeTimer={activeTimer} setActiveTimer={setActiveTimer} refresh={refresh} setStatus={setStatus} />}
+      {view === "insights" && <InsightsView entries={entries} events={eventTypes} />}
       {view === "notes" && <NotesView notes={notes} refresh={refresh} createNote={createNote} setStatus={setStatus} />}
       {view === "settings" && <SettingsView events={eventTypes} refresh={refresh} theme={theme} setTheme={setTheme} brightness={brightness} setBrightness={setBrightness} setStatus={setStatus} />}
     </main>
@@ -243,9 +269,21 @@ function SettingsView({ events, refresh, theme, setTheme, brightness, setBrightn
   return <section className="grid settings-grid">
     <div className="panel"><div className="panel-head"><h2>外观与启动</h2></div><label>界面皮肤<select value={theme} onChange={(event) => setTheme(event.target.value)}>{themes.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label><label>界面亮度<input type="range" min="75" max="115" value={brightness} onChange={(event) => setBrightness(Number(event.target.value))} /><span>{brightness}%</span></label><label className="setting-toggle"><input type="checkbox" checked={autostart} onChange={(event) => changeAutostart(event.target.checked)} />开机自动启动 TimePast</label></div>
     <RetentionSettings refresh={refresh} setStatus={setStatus} />
+    <ShortcutSettings events={events} />
     <div className="panel"><div className="panel-head"><h2>事件类型</h2></div><label>名称<input value={name} onChange={(event) => setName(event.target.value)} /></label><label>颜色<input type="color" value={color} onChange={(event) => setColor(event.target.value)} /></label><button className="primary" onClick={async () => { if (!name.trim()) return; await api.saveEventType({ id: 0, name, color, sortOrder: events.length + 1, pinned: true, archived: false }); setName(""); await refresh(); }}><Plus size={16} />添加事件</button></div>
     <div className="panel wide"><div className="event-list">{events.map((item) => editingEvent?.id === item.id ? <div className="event-row event-edit" key={item.id}><span className="dot" style={{ background: editingEvent.color }} /><input aria-label="事件名称" value={editingEvent.name} onChange={(event) => setEditingEvent({ ...editingEvent, name: event.target.value })} /><input aria-label="事件颜色" type="color" value={editingEvent.color} onChange={(event) => setEditingEvent({ ...editingEvent, color: event.target.value })} /><button className="primary" onClick={async () => { if (!editingEvent.name.trim()) return; await api.saveEventType({ ...editingEvent, name: editingEvent.name.trim() }); setEditingEvent(null); await refresh(); setStatus("事件已更新"); }}>保存</button><button onClick={() => setEditingEvent(null)}>取消</button></div> : <div className="event-row" key={item.id}><span className="dot" style={{ background: item.color }} /><strong>{item.name}</strong><button onClick={() => setEditingEvent(item)}><Edit3 size={15} />编辑</button><button onClick={async () => { const pinned = !item.pinned; const sortOrder = pinned ? Math.min(0, ...events.filter((event) => event.pinned && event.id !== item.id).map((event) => event.sortOrder)) - 1 : item.sortOrder; await api.saveEventType({ ...item, pinned, archived: pinned ? false : item.archived, sortOrder }); await refresh(); }}><Pin size={15} />{item.pinned ? "取消置顶" : "置顶"}</button><button onClick={async () => { await api.archiveEventType(item.id); await refresh(); }}><Trash2 size={15} />隐藏</button><button className="danger-icon" title="删除事件" onClick={async () => { try { await api.deleteEventType(item.id); await refresh(); setStatus("事件已删除"); } catch (error) { setStatus("无法删除已有打卡记录的事件，请使用隐藏。"); } }}><Trash2 size={15} />删除</button></div>)}</div></div>
   </section>;
+}
+function ShortcutSettings({ events }: { events: EventType[] }) {
+  const [status, setStatus] = useState<{ quickStart: boolean; newNote: boolean } | null>(null);
+  useEffect(() => { api.getShortcutStatus().then(setStatus).catch(() => setStatus({ quickStart: false, newNote: false })); }, []);
+  const firstEvent = events.find((item) => item.pinned && !item.archived) ?? events.find((item) => !item.archived);
+  return <div className="panel"><div className="panel-head"><h2>全局快捷键</h2></div>
+    <p className="muted">TimePast 运行时，在其他窗口也能使用。</p>
+    <div className="shortcut-row"><span><strong>快速开始打卡</strong><small>开始首个置顶事件{firstEvent ? `（${firstEvent.name}）` : ""}；已有计时则显示小条</small></span><kbd>Ctrl + Alt + T</kbd><em>{status?.quickStart ? "可用" : "未启用或被占用"}</em></div>
+    <div className="shortcut-row"><span><strong>新建桌面便签</strong><small>创建后立即打开便签窗口</small></span><kbd>Ctrl + Alt + N</kbd><em>{status?.newNote ? "可用" : "未启用或被占用"}</em></div>
+    <p className="muted">若快捷键被其他软件占用，请关闭冲突软件后重新启动 TimePast。</p>
+  </div>;
 }
 function Empty({ text }: { text: string }) { return <div className="empty"><span>{text}</span></div>; }
 createRoot(document.getElementById("root")!).render(<App />);

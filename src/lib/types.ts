@@ -1,4 +1,4 @@
-export type ViewKey = "today" | "entries" | "notes" | "settings";
+export type ViewKey = "today" | "entries" | "insights" | "notes" | "settings";
 
 export interface EventType {
   id: number;

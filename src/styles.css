@@ -1262,3 +1262,52 @@ body.note-window-page .desktop-note.collapsed .desktop-note-toolbar {
   .entry-list.compact .entry-row { grid-template-columns: 10px minmax(82px, 1fr) 92px minmax(0, 1fr) auto; }
   .entry-row > button:nth-last-of-type(-n + 2) { display: none; }
 }
+
+/* Daily time line and category trends */
+.insights-page { display: grid; gap: 14px; }
+.insights-toolbar, .insights-navigate, .insights-tabs, .insights-legend { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.insights-toolbar { justify-content: space-between; }
+.insights-tabs { padding: 3px; border-radius: 9px; background: #edf2f8; }
+.insights-tabs button { min-width: 48px; border: 0; background: transparent; }
+.insights-tabs button.active, .insights-legend button.active { background: #dbeafe; color: #1d4ed8; border-color: #93c5fd; font-weight: 700; }
+.insights-navigate strong { min-width: 130px; text-align: center; }
+.insights-help, .insights-footnote { color: #647084; font-size: 13px; line-height: 1.6; }
+.insights-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.insights-metrics .panel { display: grid; gap: 5px; }
+.insights-metrics span { color: #647084; font-size: 12px; }
+.insights-metrics strong { font-size: 23px; }
+.insights-chart-panel { min-width: 0; }
+.insights-chart-panel .panel-head { flex-wrap: wrap; gap: 10px; }
+.insights-legend { margin: 14px 0 4px; }
+.insights-legend button { font-size: 12px; padding: 6px 9px; }
+.insights-legend i, .day-row-label i, .category-summary-row i { display: inline-block; width: 9px; height: 9px; flex: none; border-radius: 50%; }
+.insights-svg-wrap { width: 100%; overflow-x: auto; }
+.insights-svg-wrap svg { display: block; width: 100%; min-width: 560px; height: auto; }
+.insights-empty { padding: 34px 12px; color: #647084; text-align: center; }
+.day-axis { display: flex; justify-content: space-between; margin: 24px 80px 8px 132px; color: #647084; font-size: 11px; }
+.day-rows { display: grid; gap: 8px; }
+.day-row { display: grid; grid-template-columns: 122px minmax(0, 1fr) 70px; align-items: center; gap: 10px; min-height: 33px; }
+.day-row-label, .category-summary-row > span { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; }
+.day-track { position: relative; height: 25px; border-radius: 5px; overflow: hidden; background: repeating-linear-gradient(to right, #e2e8f0 0, #e2e8f0 1px, #f8fafc 1px, #f8fafc 25%); }
+.day-block { position: absolute; top: 3px; bottom: 3px; border-radius: 4px; min-width: 2px; }
+.day-duration { color: #647084; font-size: 12px; text-align: right; }
+.insights-category-summary { display: grid; gap: 9px; margin-top: 26px; padding-top: 17px; border-top: 1px solid #e2e8f0; }
+.insights-category-summary h3 { font-size: 14px; }
+.category-summary-row { display: grid; grid-template-columns: 122px minmax(0, 1fr) 70px; gap: 10px; align-items: center; }
+.category-summary-track { height: 10px; border-radius: 20px; background: #eef2f7; overflow: hidden; }
+.category-summary-track div { height: 100%; border-radius: inherit; }
+.category-summary-row strong { font-size: 12px; text-align: right; }
+.shortcut-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 0; border-bottom: 1px solid #e2e8f0; }
+.shortcut-row span { flex: 1 1 170px; display: grid; gap: 3px; }
+.shortcut-row strong { font-size: 13px; }
+.shortcut-row small { color: #647084; font-size: 11px; }
+.shortcut-row kbd { padding: 5px 7px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc; font-size: 11px; white-space: nowrap; }
+.shortcut-row em { font-size: 11px; font-style: normal; color: #647084; }
+.shortcut-row + .muted { margin-top: 12px; }
+.app[data-theme="night"] .insights-tabs, .app[data-theme="night"] .day-track, .app[data-theme="night"] .category-summary-track, .app[data-theme="night"] .shortcut-row kbd { background: #334155; color: #e2e8f0; }
+@media (max-width: 760px) {
+  .insights-metrics { grid-template-columns: 1fr; }
+  .day-axis { margin-left: 98px; margin-right: 48px; }
+  .day-row, .category-summary-row { grid-template-columns: 88px minmax(0, 1fr) 45px; gap: 6px; }
+  .day-duration, .category-summary-row strong { font-size: 10px; }
+}
