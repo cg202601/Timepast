@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.1.11 - 2026-10-29
+
+### Added
+- Combined daily totals and weekly or monthly category trends in one time dashboard, with bar and line chart options.
+- Added customizable global shortcuts for quick time tracking and creating desktop notes.
+
+### Fixed
+- Improved mini bar edge hiding in virtual displays.
+- The time-tracking shortcut now starts on the first press, stops and saves on the second, and starts a new timer on the third.
+
 ## v0.1.10 - 2026-10-29
 
 ### Added
