@@ -239,6 +239,7 @@ fn init_db(conn: &Connection) -> Result<(), AppError> {
     performance::purge_entries(conn)?;
 
     merge_legacy_overnight_entries(conn)?;
+    performance::refresh_live_minutes(conn)?;
 
     let count: i64 = conn.query_row("SELECT COUNT(*) FROM event_types", [], |row| row.get(0))?;
     if count == 0 {
