@@ -529,11 +529,15 @@ fn geometry_path(app: &AppHandle, name: &str) -> Result<PathBuf, AppError> {
 }
 
 fn clamp_mini_geometry(mut geometry: WindowGeometry) -> WindowGeometry {
-    geometry.x = geometry.x.clamp(32, 1600);
-    geometry.y = geometry.y.clamp(32, 900);
     geometry.width = 520;
     geometry.height = 48;
     geometry
+}
+
+fn clamp_to_work_area(position: i32, origin: i32, area_size: u32, window_size: u32) -> i32 {
+    let end = origin.saturating_add(area_size as i32);
+    let last_visible = end.saturating_sub(window_size as i32).max(origin);
+    position.clamp(origin, last_visible)
 }
 
 fn load_geometry(app: &AppHandle, name: &str, fallback: WindowGeometry) -> WindowGeometry {
@@ -602,8 +606,22 @@ fn set_main_window_mode(app: AppHandle, mode: String) -> Result<(), AppError> {
         window
             .set_size(Size::Logical(LogicalSize::new(geometry.width as f64, geometry.height as f64)))
             .map_err(|e| AppError::Invalid(e.to_string()))?;
+        let center_x = geometry.x as f64 + geometry.width as f64 / 2.0;
+        let center_y = geometry.y as f64 + geometry.height as f64 / 2.0;
+        let monitor = window.monitor_from_point(center_x, center_y).ok().flatten()
+            .or_else(|| window.primary_monitor().ok().flatten());
+        let (x, y) = if let Some(monitor) = monitor {
+            let area = monitor.work_area();
+            let size = window.outer_size().map_err(|e| AppError::Invalid(e.to_string()))?;
+            (
+                clamp_to_work_area(geometry.x, area.position.x, area.size.width, size.width),
+                clamp_to_work_area(geometry.y, area.position.y, area.size.height, size.height),
+            )
+        } else {
+            (geometry.x, geometry.y)
+        };
         window
-            .set_position(Position::Physical(PhysicalPosition::new(geometry.x, geometry.y)))
+            .set_position(Position::Physical(PhysicalPosition::new(x, y)))
             .map_err(|e| AppError::Invalid(e.to_string()))?;
     } else {
         window
@@ -777,6 +795,14 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keeps_edge_positions_when_clamping_saved_mini_window() {
+        assert_eq!(clamp_to_work_area(0, 0, 1024, 520), 0);
+        assert_eq!(clamp_to_work_area(900, 0, 1024, 520), 504);
+        assert_eq!(clamp_to_work_area(-1700, -1920, 1920, 520), -1700);
+        assert_eq!(clamp_to_work_area(-500, -1920, 1920, 520), -520);
+    }
 
     #[test]
     fn retention_includes_today_and_rejects_other_periods() {

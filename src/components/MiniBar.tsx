@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { currentMonitor, getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
+import { currentMonitor, getCurrentWindow, PhysicalPosition, primaryMonitor } from "@tauri-apps/api/window";
 import { Check, Maximize2, Pin, Play, Plus, Square, StickyNote } from "lucide-react";
 import { api } from "../lib/api";
 import type { ActiveTimer, EventType } from "../lib/types";
@@ -11,7 +11,7 @@ type MiniBarProps = {
 };
 type Edge = "top" | "right" | "bottom" | "left";
 type WorkArea = { x: number; y: number; width: number; height: number };
-const edgeThreshold = 18;
+const edgeThreshold = 36;
 const revealSize = 14;
 
 export function MiniBar({ events, activeTimer, alwaysOnTop, edgeHide, opacity, onAlwaysOnTopChange, onEdgeHideChange, onOpacityChange, onStart, onStop, onNote, onAddEvent, onExpand }: MiniBarProps) {
@@ -27,6 +27,7 @@ export function MiniBar({ events, activeTimer, alwaysOnTop, edgeHide, opacity, o
   const hideTimerRef = useRef<number | null>(null);
   const suppressHideUntilRef = useRef(0);
   const menuOpenRef = useRef(false);
+  const pointerInsideRef = useRef(false);
 
   useEffect(() => {
     edgeHideRef.current = edgeHide;
@@ -50,6 +51,9 @@ export function MiniBar({ events, activeTimer, alwaysOnTop, edgeHide, opacity, o
         restorePositionRef.current = null;
         suppressHideUntilRef.current = Date.now() + 800;
         clearHideTimer();
+      } else if (area && edgeHideRef.current && Date.now() >= suppressHideUntilRef.current) {
+        // A drag can end at the VM boundary without a mouseleave event.
+        scheduleHideToEdge(900);
       }
       await api.saveWindowGeometry("mini-window", position.x, position.y, size.width, size.height);
     });
@@ -68,7 +72,7 @@ export function MiniBar({ events, activeTimer, alwaysOnTop, edgeHide, opacity, o
     } catch (error) { setAddError(String(error).replace(/^Error:\s*/, "") || "保存失败"); }
   };
   const workArea = async (): Promise<WorkArea | null> => {
-    const monitor = await currentMonitor().catch(() => null);
+    const monitor = await currentMonitor().catch(() => null) ?? await primaryMonitor().catch(() => null);
     return monitor ? { x: monitor.workArea.position.x, y: monitor.workArea.position.y, width: monitor.workArea.size.width, height: monitor.workArea.size.height } : null;
   };
   const nearestEdge = (position: PhysicalPosition, size: { width: number; height: number }, area: WorkArea): Edge | null => {
@@ -86,14 +90,15 @@ export function MiniBar({ events, activeTimer, alwaysOnTop, edgeHide, opacity, o
     return new PhysicalPosition(area.x - size.width + revealSize, y);
   };
   function clearHideTimer() { if (hideTimerRef.current !== null) { window.clearTimeout(hideTimerRef.current); hideTimerRef.current = null; } }
-  function scheduleHideToEdge() {
+  function scheduleHideToEdge(minDelay = 260) {
     clearHideTimer();
     if (!edgeHideRef.current || adding || menuOpenRef.current) return;
-    const delay = Math.max(260, suppressHideUntilRef.current - Date.now() + 260);
+    const delay = Math.max(minDelay, suppressHideUntilRef.current - Date.now() + 260);
     hideTimerRef.current = window.setTimeout(hideToEdge, delay);
   }
   async function hideToEdge() {
     if (!edgeHideRef.current || hiddenRef.current || adding || menuOpenRef.current || Date.now() < suppressHideUntilRef.current) return;
+    if (pointerInsideRef.current && (document.activeElement as HTMLElement | null)?.matches("input, select, textarea, [contenteditable='true']")) return;
     const area = await workArea();
     if (!area) return;
     const windowRef = getCurrentWindow();
@@ -103,17 +108,26 @@ export function MiniBar({ events, activeTimer, alwaysOnTop, edgeHide, opacity, o
     if (!edge) return;
     restorePositionRef.current = position; hiddenRef.current = true;
     await api.saveWindowGeometry("mini-window", position.x, position.y, size.width, size.height).catch(() => undefined);
-    await windowRef.setPosition(hiddenPosition(edge, position, size, area)).catch(() => undefined);
+    try {
+      await windowRef.setPosition(hiddenPosition(edge, position, size, area));
+    } catch {
+      hiddenRef.current = false;
+      restorePositionRef.current = null;
+    }
   }
   async function revealFromEdge() {
     clearHideTimer();
     const position = restorePositionRef.current;
     if (!hiddenRef.current || !position) return;
     suppressHideUntilRef.current = Date.now() + 800; hiddenRef.current = false;
-    await getCurrentWindow().setPosition(position).catch(() => undefined);
+    try {
+      await getCurrentWindow().setPosition(position);
+    } catch {
+      hiddenRef.current = true;
+    }
   }
 
-  return <div className="mini-bar" style={{ opacity: opacity / 100 }} data-tauri-drag-region onMouseDown={drag} onMouseEnter={() => void revealFromEdge()} onMouseLeave={scheduleHideToEdge} onContextMenu={(event) => { event.preventDefault(); clearHideTimer(); setMenuOpen(true); }}>
+  return <div className="mini-bar" style={{ opacity: opacity / 100 }} data-tauri-drag-region onMouseDown={(event) => { clearHideTimer(); if ((event.target as HTMLElement).closest("button,select,input,label,.mini-context-menu")) suppressHideUntilRef.current = Date.now() + 1200; drag(event); }} onMouseEnter={() => { pointerInsideRef.current = true; void revealFromEdge(); }} onMouseLeave={() => { pointerInsideRef.current = false; scheduleHideToEdge(); }} onContextMenu={(event) => { event.preventDefault(); clearHideTimer(); setMenuOpen(true); }}>
     <div className="mini-brand">T</div>
     {adding ? <input className="mini-add-input" autoFocus value={newEventName} placeholder="事件名称" title={addError || "事件名称"} onChange={(event) => { setNewEventName(event.target.value); setAddError(""); }} onKeyDown={(event) => { if (event.key === "Enter") void saveNewEvent(); if (event.key === "Escape") setAdding(false); }} /> : <select value={selectedId} disabled={!!activeTimer} onChange={(event) => setSelectedId(Number(event.target.value))}>{events.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}
     <input className="mini-note-input" value={note} disabled={!!activeTimer || adding} placeholder="备注" aria-label="打卡备注" onChange={(event) => setNote(event.target.value)} />
