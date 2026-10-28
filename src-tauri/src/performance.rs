@@ -638,6 +638,43 @@ mod tests {
     }
 
     #[test]
+    fn week_across_cycles_uses_each_days_own_plan() {
+        let conn = database();
+        conn.execute("INSERT INTO work_types (id, name, unit, decimals, color, hourly_target, created_at) VALUES (1, '稿件', '篇', 0, '#2563eb', 1, 'now')", []).unwrap();
+        let (old_start, old_end) = cycle_for(parse_day("2026-11-09").unwrap(), 10);
+        let (new_start, new_end) = cycle_for(parse_day("2026-11-10").unwrap(), 10);
+        assert_eq!((new_start - old_start).num_days(), 31);
+        conn.execute("INSERT INTO work_cycle_goals VALUES (1, ?1, ?2, 31, 1)", params![day_string(old_start), day_string(old_end)]).unwrap();
+        conn.execute("INSERT INTO work_cycle_goals VALUES (1, ?1, ?2, 60, 1)", params![day_string(new_start), day_string(new_end)]).unwrap();
+        allocate_plan(&conn, 1, &day_string(old_start)).unwrap();
+        allocate_plan(&conn, 1, &day_string(new_start)).unwrap();
+        let weekly_plan: f64 = conn.query_row("SELECT SUM(target) FROM work_day_plans WHERE work_type_id = 1 AND day BETWEEN '2026-11-09' AND '2026-11-15'", [], |row| row.get(0)).unwrap();
+        assert!((weekly_plan - 13.0).abs() < 0.00001);
+    }
+
+    #[test]
+    fn schedule_change_keeps_past_day_plan_fixed() {
+        let conn = database();
+        conn.execute("INSERT INTO work_types (id, name, unit, decimals, color, hourly_target, created_at) VALUES (1, '稿件', '篇', 0, '#2563eb', 1, 'now')", []).unwrap();
+        let today = chrono::Local::now().date_naive();
+        let start_day = if today.day() > 1 { today.day() - 1 } else { 31 };
+        let (start, end) = cycle_for(today, start_day as i64);
+        let start = day_string(start);
+        let end = day_string(end);
+        conn.execute("INSERT INTO work_cycle_goals VALUES (1, ?1, ?2, 100, 1)", params![start, end]).unwrap();
+        allocate_plan(&conn, 1, &start).unwrap();
+        let yesterday = day_string(today - Duration::days(1));
+        let old_plan: f64 = conn.query_row("SELECT target FROM work_day_plans WHERE work_type_id = 1 AND day = ?1", params![yesterday], |row| row.get(0)).unwrap();
+        let tomorrow = day_string(today + Duration::days(1));
+        conn.execute("INSERT INTO work_day_overrides VALUES (1, ?1, 'rest', NULL)", params![tomorrow]).unwrap();
+        allocate_plan(&conn, 1, &start).unwrap();
+        let unchanged: f64 = conn.query_row("SELECT target FROM work_day_plans WHERE work_type_id = 1 AND day = ?1", params![yesterday], |row| row.get(0)).unwrap();
+        let total: f64 = conn.query_row("SELECT SUM(target) FROM work_day_plans WHERE work_type_id = 1", [], |row| row.get(0)).unwrap();
+        assert!((old_plan - unchanged).abs() < 0.00001);
+        assert!((total - 100.0).abs() < 0.00001);
+    }
+
+    #[test]
     fn expired_overnight_entry_keeps_both_daily_time_summaries() {
         let conn = database();
         conn.execute("INSERT INTO work_types (id, name, unit, decimals, color, hourly_target, created_at) VALUES (1, '剪辑', '分钟', 0, '#2563eb', 5, 'now')", []).unwrap();
