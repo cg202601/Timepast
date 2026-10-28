@@ -1265,12 +1265,14 @@ body.note-window-page .desktop-note.collapsed .desktop-note-toolbar {
 
 /* Daily time line and category trends */
 .insights-page { display: grid; gap: 14px; }
-.insights-toolbar, .insights-navigate, .insights-tabs, .insights-legend { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.insights-toolbar, .insights-navigate, .insights-tabs, .insights-legend, .insights-chart-switch { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .insights-toolbar { justify-content: space-between; }
 .insights-tabs { padding: 3px; border-radius: 9px; background: #edf2f8; }
 .insights-tabs button { min-width: 48px; border: 0; background: transparent; }
 .insights-tabs button.active, .insights-legend button.active { background: #dbeafe; color: #1d4ed8; border-color: #93c5fd; font-weight: 700; }
 .insights-navigate strong { min-width: 130px; text-align: center; }
+.insights-date { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.insights-date input { width: auto; padding: 6px 8px; }
 .insights-help, .insights-footnote { color: #647084; font-size: 13px; line-height: 1.6; }
 .insights-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .insights-metrics .panel { display: grid; gap: 5px; }
@@ -1278,12 +1280,18 @@ body.note-window-page .desktop-note.collapsed .desktop-note-toolbar {
 .insights-metrics strong { font-size: 23px; }
 .insights-chart-panel { min-width: 0; }
 .insights-chart-panel .panel-head { flex-wrap: wrap; gap: 10px; }
+.insights-chart-panel .panel-head h2 { margin-bottom: 5px; }
+.insights-chart-switch { gap: 5px; }
+.insights-chart-switch button { font-size: 12px; padding: 6px 8px; }
+.insights-chart-switch button.active { color: #1d4ed8; border-color: #93c5fd; background: #dbeafe; font-weight: 700; }
 .insights-legend { margin: 14px 0 4px; }
 .insights-legend button { font-size: 12px; padding: 6px 9px; }
 .insights-legend i, .day-row-label i, .category-summary-row i { display: inline-block; width: 9px; height: 9px; flex: none; border-radius: 50%; }
 .insights-svg-wrap { width: 100%; overflow-x: auto; }
 .insights-svg-wrap svg { display: block; width: 100%; min-width: 560px; height: auto; }
 .insights-empty { padding: 34px 12px; color: #647084; text-align: center; }
+.insights-page .today-grid { min-width: 0; }
+.insights-page .note-preview strong { display: block; margin-bottom: 5px; }
 .day-axis { display: flex; justify-content: space-between; margin: 24px 80px 8px 132px; color: #647084; font-size: 11px; }
 .day-rows { display: grid; gap: 8px; }
 .day-row { display: grid; grid-template-columns: 122px minmax(0, 1fr) 70px; align-items: center; gap: 10px; min-height: 33px; }

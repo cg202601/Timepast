@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { BarChart3, Check, ChevronDown, Clock3, Edit3, LayoutDashboard, Maximize2, Minimize2, Palette, Pin, Play, Plus, Settings, Square, StickyNote, Trash2 } from "lucide-react";
+import { Check, ChevronDown, Clock3, Edit3, LayoutDashboard, Maximize2, Minimize2, Palette, Pin, Play, Plus, Settings, Square, StickyNote, Trash2 } from "lucide-react";
 import { MiniBar } from "./components/MiniBar";
 import { EntryList } from "./features/entries/EntryList";
 import { InsightsView } from "./features/insights/InsightsView";
@@ -12,15 +12,14 @@ import { api } from "./lib/api";
 import { isAppNoteCollapsed, noteTitle, withAppNoteCollapsed, withNoteTitle } from "./lib/noteMeta";
 import { insertHtmlAtSelection, normalizeStoredRichText, sanitizeClipboardHtml } from "./lib/richText";
 import { finishActiveTimer } from "./lib/timerActions";
-import { currentTime, formatDuration, isoToTimeInput, minutesBetween, normalizeDateInput, todayDate } from "./lib/time";
+import { currentTime, isoToTimeInput, normalizeDateInput, todayDate } from "./lib/time";
 import type { ActiveTimer, EventType, StickyNote as Note, TimeEntry, TimeEntryInput, ViewKey } from "./lib/types";
 import "./styles.css";
 
 const noteColors = ["#fff7c2", "#dbeafe", "#dcfce7", "#fde2e2", "#f3e8ff", "#f8fafc"];
 const views: Array<{ key: ViewKey; label: string; icon: React.ReactNode }> = [
-  { key: "today", label: "今日", icon: <LayoutDashboard size={18} /> },
+  { key: "today", label: "时间看板", icon: <LayoutDashboard size={18} /> },
   { key: "entries", label: "打卡记录", icon: <Clock3 size={18} /> },
-  { key: "insights", label: "分类趋势", icon: <BarChart3 size={18} /> },
   { key: "notes", label: "桌贴便签", icon: <StickyNote size={18} /> },
   { key: "settings", label: "设置", icon: <Settings size={18} /> }
 ];
@@ -114,21 +113,12 @@ function App() {
     </aside>
     <main className="main">
       <header className="topbar"><div><h1>{views.find((item) => item.key === view)?.label}</h1><p>{status || "记录时间、整理便签，数据只保存在本机。"}</p></div><div className="quick-events">{quickEvents.map((item) => <button className="chip" key={item.id} disabled={!!activeTimer} onClick={() => startTimer(item)}><span style={{ background: item.color }} />{item.name}</button>)}<button onClick={() => setMini(true)}><Minimize2 size={16} />小条</button></div></header>
-      {view === "today" && <TodayView entries={entries} notes={notes} events={quickEvents} setView={setView} />}
+      {view === "today" && <InsightsView entries={entries} events={eventTypes} notes={notes} onAddEntry={() => setView("entries")} onOpenNotes={() => setView("notes")} />}
       {view === "entries" && <EntriesView events={activeEvents} entries={entries} activeTimer={activeTimer} setActiveTimer={setActiveTimer} refresh={refresh} setStatus={setStatus} />}
-      {view === "insights" && <InsightsView entries={entries} events={eventTypes} />}
       {view === "notes" && <NotesView notes={notes} refresh={refresh} createNote={createNote} setStatus={setStatus} />}
       {view === "settings" && <SettingsView events={eventTypes} refresh={refresh} theme={theme} setTheme={setTheme} brightness={brightness} setBrightness={setBrightness} setStatus={setStatus} />}
     </main>
   </div>;
-}
-
-function TodayView({ entries, notes, events, setView }: { entries: TimeEntry[]; notes: Note[]; events: EventType[]; setView: (value: ViewKey) => void }) {
-  const [selectedDate, setSelectedDate] = useState(todayDate());
-  const selectedEntries = entries.filter((item) => item.entryDate === selectedDate);
-  const total = selectedEntries.reduce((sum, item) => sum + Math.max(0, minutesBetween(item.startTime, item.endTime)), 0);
-  const isToday = selectedDate === todayDate();
-  return <section className="grid today-grid"><div className="panel wide"><div className="panel-head"><div><h2>{isToday ? "今日时间" : "历史记录"}</h2><label className="history-date">查看日期<input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} /></label></div><button onClick={() => setView("entries")}><Plus size={16} />记录</button></div><div className="metric-row"><div><strong>{formatDuration(total)}</strong><span>已记录</span></div><div><strong>{selectedEntries.length}</strong><span>时间段</span></div><div><strong>{events.length}</strong><span>快捷事件</span></div></div><EntryList entries={selectedEntries} compact /></div><div className="panel"><div className="panel-head"><h2>便签预览</h2><button onClick={() => setView("notes")}>打开</button></div>{notes.slice(0, 4).map((item) => <div className="note-preview" key={item.id} style={{ background: item.color }}>{plainText(item.content)}</div>)}</div></section>;
 }
 
 function EntriesView({ events, entries, activeTimer, setActiveTimer, refresh, setStatus }: { events: EventType[]; entries: TimeEntry[]; activeTimer: ActiveTimer | null; setActiveTimer: (value: ActiveTimer | null) => void; refresh: () => Promise<void>; setStatus: (value: string) => void }) {

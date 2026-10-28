@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { addDays, addMonths, addWeeks, format, parseISO, startOfMonth, startOfWeek, subDays } from "date-fns";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { EntryList } from "../entries/EntryList";
 import { api } from "../../lib/api";
+import { noteTitle } from "../../lib/noteMeta";
+import { normalizeStoredRichText } from "../../lib/richText";
 import { formatDuration, todayDate } from "../../lib/time";
-import type { EventType, TimeEntry } from "../../lib/types";
+import type { EventType, StickyNote, TimeEntry } from "../../lib/types";
 
 type Period = "day" | "week" | "month";
+type ChartMode = "bars" | "line";
 type Part = { id: number; date: string; start: number; end: number; eventTypeId: number; name: string; color: string; note: string };
 type Category = { id: number; name: string; color: string; minutes: number };
 const weekday = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
@@ -47,8 +51,15 @@ function periodDates(period: Period, anchor: Date) {
 
 const shortTime = (value: number) => `${String(Math.floor(value / 60) % 24).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
 
-export function InsightsView({ entries, events }: { entries: TimeEntry[]; events: EventType[] }) {
+function plainText(content: string) {
+  const node = document.createElement("div");
+  node.innerHTML = normalizeStoredRichText(content);
+  return (node.textContent || content).replace(/\s+/g, " ").trim();
+}
+
+export function InsightsView({ entries, events, notes, onAddEntry, onOpenNotes }: { entries: TimeEntry[]; events: EventType[]; notes: StickyNote[]; onAddEntry: () => void; onOpenNotes: () => void }) {
   const [period, setPeriod] = useState<Period>("day");
+  const [chartMode, setChartMode] = useState<ChartMode>("bars");
   const [anchor, setAnchor] = useState(todayDate());
   const [categoryId, setCategoryId] = useState<number | "all">("all");
   const [retentionDays, setRetentionDays] = useState<number | null>(null);
@@ -60,6 +71,8 @@ export function InsightsView({ entries, events }: { entries: TimeEntry[]; events
   const parts = useMemo(() => splitEntriesByDay(entries), [entries]);
   const visibleParts = useMemo(() => parts.filter((part) => part.date >= firstDate && part.date <= lastDate && (!cutoff || part.date >= cutoff)), [parts, firstDate, lastDate, cutoff]);
   const categories = useMemo(() => categoriesFor(visibleParts, events), [visibleParts, events]);
+  const dayEntryIds = new Set(visibleParts.map((part) => part.id));
+  const dayEntries = period === "day" ? entries.filter((entry) => dayEntryIds.has(entry.id)) : [];
   const total = categories.reduce((sum, item) => sum + item.minutes, 0);
   const change = (direction: number) => {
     const date = parseISO(anchor);
@@ -71,12 +84,12 @@ export function InsightsView({ entries, events }: { entries: TimeEntry[]; events
 
   return <section className="insights-page">
     <div className="panel insights-toolbar">
-      <div className="insights-tabs" aria-label="统计周期">{(["day", "week", "month"] as const).map((value) => <button key={value} className={period === value ? "active" : ""} onClick={() => { setPeriod(value); setCategoryId("all"); }}>{value === "day" ? "日" : value === "week" ? "周" : "月"}</button>)}</div>
-      <div className="insights-navigate"><button title="上一段" aria-label="上一段" onClick={() => change(-1)}><ChevronLeft size={18} /></button><strong>{label}</strong><button title="下一段" aria-label="下一段" disabled={!canNext} onClick={() => change(1)}><ChevronRight size={18} /></button><button onClick={() => setAnchor(todayDate())}>回到今天</button></div>
+      <div className="insights-tabs" aria-label="统计周期">{(["day", "week", "month"] as const).map((value) => <button key={value} className={period === value ? "active" : ""} onClick={() => { setPeriod(value); setCategoryId("all"); setChartMode(value === "month" ? "line" : "bars"); }}>{value === "day" ? "日" : value === "week" ? "周" : "月"}</button>)}</div>
+      <div className="insights-navigate"><button title="上一段" aria-label="上一段" onClick={() => change(-1)}><ChevronLeft size={18} /></button><strong>{label}</strong><button title="下一段" aria-label="下一段" disabled={!canNext} onClick={() => change(1)}><ChevronRight size={18} /></button><label className="insights-date">跳转日期<input type="date" value={anchor} max={todayDate()} onChange={(event) => { if (event.target.value) setAnchor(event.target.value); }} /></label><button onClick={() => setAnchor(todayDate())}>回到今天</button></div>
     </div>
-    <p className="insights-help">{period === "day" ? "查看当天的 24 小时时间线与分类占比。" : "每根柱子代表一天，颜色表示分类；选择分类可查看它的每日走势。"} 跨午夜的记录会分到实际日期。</p>
-    <div className="insights-metrics"><div className="panel"><span>已记录时长</span><strong>{formatDuration(total)}</strong></div><div className="panel"><span>有记录的天数</span><strong>{new Set(visibleParts.map((part) => part.date)).size} 天</strong></div><div className="panel"><span>分类数量</span><strong>{categories.length} 类</strong></div></div>
-    {period === "day" ? <DayChart date={firstDate} parts={visibleParts} categories={categories} expired={!!cutoff && firstDate < cutoff} /> : <TrendChart dates={dates} parts={visibleParts} categories={categories} selected={categoryId} onSelect={setCategoryId} cutoff={cutoff} period={period} />}
+    <p className="insights-help">{period === "day" ? "当天看 24 小时时间线、分类时长和记录。" : chartMode === "bars" ? "堆叠柱状图：每天一根柱子，颜色表示时间分类；柱子越高，当天记录越久。" : "折线图：每天一个点，连线表示时长变化；点击分类可查看对应走势。"} 跨午夜的记录会分到实际日期。</p>
+    <div className="insights-metrics"><div className="panel"><span>已记录时长</span><strong>{formatDuration(total)}</strong></div><div className="panel"><span>{period === "day" ? "时间段" : "有记录的天数"}</span><strong>{period === "day" ? `${dayEntries.length} 段` : `${new Set(visibleParts.map((part) => part.date)).size} 天`}</strong></div><div className="panel"><span>分类数量</span><strong>{categories.length} 类</strong></div></div>
+    {period === "day" ? <><DayChart date={firstDate} parts={visibleParts} categories={categories} expired={!!cutoff && firstDate < cutoff} /><div className="grid today-grid"><div className="panel wide"><div className="panel-head"><h2>{firstDate === todayDate() ? "今日记录" : "当天记录"}</h2><button onClick={onAddEntry}><Plus size={16} />记录</button></div><EntryList entries={dayEntries} compact /></div><div className="panel"><div className="panel-head"><h2>便签预览</h2><button onClick={onOpenNotes}>打开</button></div>{notes.slice(0, 4).map((note) => <div className="note-preview" key={note.id} style={{ background: note.color }}><strong>{noteTitle(note)}</strong><div>{plainText(note.content)}</div></div>)}{!notes.length && <div className="insights-empty">还没有便签。</div>}</div></div></> : <TrendChart dates={dates} parts={visibleParts} categories={categories} selected={categoryId} onSelect={setCategoryId} cutoff={cutoff} period={period} mode={chartMode} onModeChange={setChartMode} />}
     <p className="insights-footnote">仅统计当前保留的打卡记录。{retentionDays ? `当前保留最近 ${retentionDays} 天；灰色日期已超出保留期限，不表示当天没有活动。` : "已删除的记录无法恢复到图表。"} 今天之后的日期尚未发生。</p>
   </section>;
 }
@@ -89,7 +102,7 @@ function DayChart({ date, parts, categories, expired }: { date: string; parts: P
   </div>;
 }
 
-function TrendChart({ dates, parts, categories, selected, onSelect, cutoff, period }: { dates: string[]; parts: Part[]; categories: Category[]; selected: number | "all"; onSelect: (id: number | "all") => void; cutoff: string | null; period: Period }) {
+function TrendChart({ dates, parts, categories, selected, onSelect, cutoff, period, mode, onModeChange }: { dates: string[]; parts: Part[]; categories: Category[]; selected: number | "all"; onSelect: (id: number | "all") => void; cutoff: string | null; period: Period; mode: ChartMode; onModeChange: (mode: ChartMode) => void }) {
   const categoryIds = new Set(categories.map((item) => item.id));
   const active = selected === "all" || categoryIds.has(selected) ? selected : "all";
   const totals = dates.map((date) => {
@@ -98,7 +111,7 @@ function TrendChart({ dates, parts, categories, selected, onSelect, cutoff, peri
     for (const part of dayParts) byCategory.set(part.eventTypeId, (byCategory.get(part.eventTypeId) ?? 0) + part.end - part.start);
     return { date, byCategory, total: [...byCategory.values()].reduce((sum, value) => sum + value, 0) };
   });
-  const peak = Math.max(60, ...totals.map((item) => item.total));
+  const peak = Math.max(60, ...totals.map((item) => mode === "bars" || active === "all" ? item.total : item.byCategory.get(active) ?? 0));
   const yMax = Math.ceil(peak / 60) * 60;
   const x0 = 52, x1 = 872, y0 = 22, y1 = 252;
   const step = (x1 - x0) / dates.length;
@@ -113,17 +126,17 @@ function TrendChart({ dates, parts, categories, selected, onSelect, cutoff, peri
     current += `${current ? " L" : "M"}${point.x.toFixed(1)},${point.y.toFixed(1)}`;
   }
   if (current) paths.push(current);
-  return <div className="panel insights-chart-panel"><div className="panel-head"><h2>{period === "week" ? "本周每日分类走势" : "本月每日分类走势"}</h2><span className="muted">柱：每日各分类时长　线：所选分类趋势</span></div>
-    <div className="insights-legend"><button className={active === "all" ? "active" : ""} onClick={() => onSelect("all")}>全部</button>{categories.map((category) => <button key={category.id} className={active === category.id ? "active" : ""} onClick={() => onSelect(category.id)}><i style={{ background: category.color }} />{category.name} · {formatDuration(category.minutes)}</button>)}</div>
-    <div className="insights-svg-wrap"><svg viewBox="0 0 900 300" role="img" aria-label={`${period === "week" ? "每周" : "每月"}分类每日时长与趋势`}>
-      {[0, 0.25, 0.5, 0.75, 1].map((fraction) => <g key={fraction}><line x1={x0} x2={x1} y1={y1 - fraction * (y1 - y0)} y2={y1 - fraction * (y1 - y0)} stroke="#dbe3ee" /><text x={x0 - 8} y={y1 - fraction * (y1 - y0) + 4} textAnchor="end" fontSize="11" fill="#64748b">{Math.round(yMax * fraction / 60)}h</text></g>)}
+  return <div className="panel insights-chart-panel"><div className="panel-head"><div><h2>{period === "week" ? "周内每日分类" : "月内每日分类"}</h2><span className="muted">{mode === "bars" ? "堆叠柱状图 · 比较每天的分类构成" : "折线图 · 查看每日时长走势"}</span></div><div className="insights-chart-switch" aria-label="图表类型"><button className={mode === "bars" ? "active" : ""} onClick={() => onModeChange("bars")}>分类构成 · 柱状图</button><button className={mode === "line" ? "active" : ""} onClick={() => onModeChange("line")}>走势 · 折线图</button></div></div>
+    <div className="insights-legend"><button className={active === "all" ? "active" : ""} onClick={() => onSelect("all")}>{mode === "line" ? "总时长" : "全部分类"}</button>{categories.map((category) => <button key={category.id} className={active === category.id ? "active" : ""} onClick={() => onSelect(category.id)}><i style={{ background: category.color }} />{category.name} · {formatDuration(category.minutes)}</button>)}</div>
+    <div className="insights-svg-wrap"><svg viewBox="0 0 900 300" role="img" aria-label={`${period === "week" ? "周内" : "月内"}每日分类${mode === "bars" ? "堆叠柱状图" : "折线图"}`}>
+      {[0, 0.25, 0.5, 0.75, 1].map((fraction) => <g key={fraction}><line x1={x0} x2={x1} y1={y1 - fraction * (y1 - y0)} y2={y1 - fraction * (y1 - y0)} stroke="#dbe3ee" /><text x={x0 - 8} y={y1 - fraction * (y1 - y0) + 4} textAnchor="end" fontSize="11" fill="#64748b">{Number((yMax * fraction / 60).toFixed(1))}h</text></g>)}
       {totals.map((item, index) => {
         const x = pointX(index), width = Math.max(7, step * 0.62), unavailable = (cutoff && item.date < cutoff) || item.date > todayDate();
         let bottom = y1;
-        return <g key={item.date}><title>{item.date} · {unavailable ? "记录不可用" : categories.map((category) => `${category.name} ${formatDuration(item.byCategory.get(category.id) ?? 0)}`).join("，") || "无记录"}</title>{unavailable ? <rect x={x - width / 2} y={y0} width={width} height={y1 - y0} fill="#f1f5f9" /> : categories.map((category) => { const value = item.byCategory.get(category.id) ?? 0; const height = value / yMax * (y1 - y0); bottom -= height; return value ? <rect key={category.id} x={x - width / 2} y={bottom} width={width} height={height} fill={category.color} opacity={active === "all" || active === category.id ? 0.88 : 0.35} /> : null; })}{(period === "week" || index % 5 === 0 || index === dates.length - 1) && <text x={x} y={y1 + 20} textAnchor="middle" fontSize="11" fill="#64748b">{period === "week" ? weekday[parseISO(item.date).getDay()] : format(parseISO(item.date), "d日")}</text>}</g>;
+        return <g key={item.date}><title>{item.date} · {unavailable ? item.date > todayDate() ? "尚未发生" : "超出保留期限" : categories.map((category) => `${category.name} ${formatDuration(item.byCategory.get(category.id) ?? 0)}`).join("，") || "无记录"}</title>{unavailable ? <rect x={x - width / 2} y={y0} width={width} height={y1 - y0} fill="#f1f5f9" /> : mode === "bars" ? categories.map((category) => { const value = item.byCategory.get(category.id) ?? 0; const height = value / yMax * (y1 - y0); bottom -= height; return value ? <rect key={category.id} x={x - width / 2} y={bottom} width={width} height={height} fill={category.color} opacity={active === "all" || active === category.id ? 0.88 : 0.35} /> : null; }) : null}{(period === "week" || index % 5 === 0 || index === dates.length - 1) && <text x={x} y={y1 + 20} textAnchor="middle" fontSize="11" fill="#64748b">{period === "week" ? weekday[parseISO(item.date).getDay()] : format(parseISO(item.date), "d日")}</text>}</g>;
       })}
-      {paths.map((path, index) => <path key={index} d={path} fill="none" stroke={lineColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />)}
-      {points.map((point, index) => point.available ? <circle key={dates[index]} cx={point.x} cy={point.y} r={period === "week" ? 4 : 2.5} fill={lineColor}><title>{dates[index]} · {formatDuration(active === "all" ? totals[index].total : totals[index].byCategory.get(active) ?? 0)}</title></circle> : null)}
+      {mode === "line" && paths.map((path, index) => <path key={index} d={path} fill="none" stroke={lineColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />)}
+      {mode === "line" && points.map((point, index) => point.available ? <circle key={dates[index]} cx={point.x} cy={point.y} r={period === "week" ? 4 : 2.5} fill={lineColor}><title>{dates[index]} · {formatDuration(active === "all" ? totals[index].total : totals[index].byCategory.get(active) ?? 0)}</title></circle> : null)}
     </svg></div>
     {!parts.length && <div className="insights-empty">此期间没有保存的打卡记录。</div>}
   </div>;
