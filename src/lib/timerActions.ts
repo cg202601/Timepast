@@ -10,7 +10,7 @@ export async function finishActiveTimer(
 ) {
   const start = new Date(timer.startedAt);
   const end = new Date();
-  if (end <= start) end.setTime(start.getTime() + 60000);
+  if (end.getTime() - start.getTime() < 60000) end.setTime(start.getTime() + 60000);
 
   await api.saveTimeEntry({
     entryDate: isoToDateInput(start.toISOString()),
@@ -21,6 +21,10 @@ export async function finishActiveTimer(
     sourceMode: "timer"
   });
   setActiveTimer(null);
-  await refresh();
-  setStatus("半自动打卡已保存");
+  try {
+    await refresh();
+    setStatus("半自动打卡已保存");
+  } catch (error) {
+    setStatus(`打卡已保存，但列表刷新失败：${String(error)}`);
+  }
 }

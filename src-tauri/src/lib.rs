@@ -1,6 +1,7 @@
 use chrono::{Local, NaiveDate, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -82,7 +83,12 @@ impl ShortcutBindings {
     }
 }
 
-struct ShortcutRegistry { bindings: Mutex<ShortcutBindings>, update: Mutex<()> }
+struct ShortcutRegistry { bindings: Mutex<ShortcutBindings>, update: Mutex<()>, pressed: Mutex<HashSet<u32>> }
+
+fn should_emit_shortcut(pressed: &mut HashSet<u32>, shortcut: &Shortcut, state: ShortcutState) -> bool {
+    if state == ShortcutState::Pressed { pressed.insert(shortcut.id()) }
+    else { pressed.remove(&shortcut.id()); false }
+}
 
 fn parse_shortcut(value: &str) -> Result<(String, Shortcut), AppError> {
     let tokens: Vec<_> = value.split('+').map(str::trim).collect();
@@ -890,13 +896,15 @@ pub fn run() {
                 new_note: load_shortcut(&conn, NEW_NOTE_KEY, DEFAULT_NEW_NOTE)?,
             };
             app.manage(Arc::new(Mutex::new(conn)));
-            app.manage(ShortcutRegistry { bindings: Mutex::new(bindings), update: Mutex::new(()) });
+            app.manage(ShortcutRegistry { bindings: Mutex::new(bindings), update: Mutex::new(()), pressed: Mutex::new(HashSet::new()) });
             setup_tray(app)?;
             app.handle().plugin(
                 tauri_plugin_global_shortcut::Builder::new()
                     .with_handler(move |app, shortcut, event| {
-                        if event.state() != ShortcutState::Pressed { return; }
                         let registry = app.state::<ShortcutRegistry>();
+                        let should_handle = registry.pressed.lock().ok()
+                            .is_some_and(|mut pressed| should_emit_shortcut(&mut pressed, shortcut, event.state()));
+                        if !should_handle { return; }
                         let action = registry.bindings.lock().ok().and_then(|bindings| {
                             if bindings.quick_start.registered && shortcut == &bindings.quick_start.shortcut { Some("shortcut-quick-start") }
                             else if bindings.new_note.registered && shortcut == &bindings.new_note.shortcut { Some("shortcut-new-note") }
@@ -965,6 +973,16 @@ mod tests {
         assert!(parse_shortcut("Ctrl+Alt").is_err());
         assert!(parse_shortcut("Ctrl+Ctrl+T").is_err());
         assert!(parse_shortcut("Ctrl+Alt+F13").is_err());
+    }
+
+    #[test]
+    fn shortcut_event_requires_release_before_another_press() {
+        let shortcut = Shortcut::from_str(DEFAULT_QUICK_START).unwrap();
+        let mut pressed = HashSet::new();
+        assert!(should_emit_shortcut(&mut pressed, &shortcut, ShortcutState::Pressed));
+        assert!(!should_emit_shortcut(&mut pressed, &shortcut, ShortcutState::Pressed));
+        assert!(!should_emit_shortcut(&mut pressed, &shortcut, ShortcutState::Released));
+        assert!(should_emit_shortcut(&mut pressed, &shortcut, ShortcutState::Pressed));
     }
 
     #[test]
