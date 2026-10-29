@@ -64,6 +64,7 @@ function App() {
       } catch (error) {
         setStatus(`退出已取消，便签未能全部保存：${String(error)}`);
         exitBusyRef.current = false;
+        setMini(false);
         await getCurrentWindow().show().catch(() => undefined);
       }
     });
