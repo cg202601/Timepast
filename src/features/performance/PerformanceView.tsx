@@ -36,14 +36,23 @@ export function PerformanceView({ setStatus }: { setStatus: (message: string) =>
   const [days, setDays] = useState<WorkDay[]>([]);
   const [overrides, setOverrides] = useState<WorkDayOverride[]>([]);
   const [revision, setRevision] = useState(0);
+  const [loadedKey, setLoadedKey] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [selectedTypeId, setSelectedTypeId] = useState<number | null>(null);
   useEffect(() => { Promise.all([api.getPerformanceSettings(), api.listWorkTypes()]).then(([s, t]) => { setSettings(s); setTypes(t); }).catch((error) => setStatus(`读取工作效率失败：${String(error)}`)); }, []);
+  useEffect(() => {
+    const active = types.filter((item) => !item.archived);
+    setSelectedTypeId((previous) => previous !== null && active.some((item) => item.id === previous) ? previous : active[0]?.id ?? null);
+  }, [types]);
   const span = useMemo(() => settings ? spanFor(period, anchor, settings.cycleStartDay) : null, [period, anchor, settings]);
   useEffect(() => {
     if (!span) return;
     let cancelled = false;
+    setLoadedKey("");
+    setLoadError("");
     Promise.all([api.listCycleGoals(span.start, span.end), api.listWorkDays(span.start, span.end), api.listWorkDayOverrides(span.start, span.end)])
-      .then(([g, d, o]) => { if (!cancelled) { setGoals(g); setDays(d); setOverrides(o); } })
-      .catch((error) => setStatus(`读取工作量记录失败：${String(error)}`));
+      .then(([g, d, o]) => { if (!cancelled) { setGoals(g); setDays(d); setOverrides(o); setLoadedKey(`${span.start}/${span.end}/${revision}`); } })
+      .catch((error) => { if (!cancelled) { setLoadError(String(error)); setStatus(`读取工作量记录失败：${String(error)}`); } });
     return () => { cancelled = true; };
   }, [span?.start, span?.end, revision]);
   const changed = () => setRevision((value) => value + 1);
@@ -57,13 +66,40 @@ export function PerformanceView({ setStatus }: { setStatus: (message: string) =>
   const cutoff = format(subDays(new Date(), settings.summaryRetentionDays - 1), "yyyy-MM-dd");
   const expired = span.start < cutoff;
   const label = period === "day" ? span.start : `${span.start} — ${span.end}`;
+  const activeTypes = types.filter((item) => !item.archived);
+  const selectedType = activeTypes.find((item) => item.id === selectedTypeId);
+  const ready = loadedKey === `${span.start}/${span.end}/${revision}`;
   return <section className="performance-view">
     <div className="panel performance-toolbar"><div className="insights-tabs">{(["day", "week", "cycle"] as const).map((value) => <button key={value} className={period === value ? "active" : ""} onClick={() => setPeriod(value)}>{value === "day" ? "日" : value === "week" ? "周" : "业绩周期"}</button>)}</div><div className="insights-navigate"><button onClick={() => move(-1)}>上一段</button><strong>{label}</strong><button onClick={() => move(1)} disabled={span.end >= todayDate()}>下一段</button><label className="insights-date">跳转日期<input type="date" value={anchor} onChange={(event) => setAnchor(event.target.value)} /></label><button onClick={() => setAnchor(todayDate())}>回到今天</button></div></div>
     {expired && <p className="performance-warning">部分日期已超出工作量汇总保留期，历史统计不完整；缺失日期不按零产出计算。</p>}
-    {!types.some((item) => !item.archived) && <div className="panel insights-empty">先在“设置 → 自定义工作类型”中添加工作，再回来设定周期目标。</div>}
-    {types.filter((item) => !item.archived).map((type) => <WorkReport key={type.id} type={type} period={period} span={span} days={days} goals={goals} overrides={overrides} cutoff={cutoff} expired={expired} changed={changed} setStatus={setStatus} />)}
+    {!activeTypes.length && <div className="panel insights-empty">先在“设置 → 工作类型”中添加工作，再回来设定周期目标。</div>}
+    {ready && activeTypes.length > 0 && <>
+      <div className="performance-overview-grid" aria-label="工作项目概览">{activeTypes.map((type) => <WorkOverview key={type.id} type={type} period={period} span={span} days={days} goals={goals} cutoff={cutoff} selected={selectedTypeId === type.id} onSelect={() => setSelectedTypeId(selectedTypeId === type.id ? null : type.id)} />)}</div>
+      {selectedType && <WorkReport key={selectedType.id} type={selectedType} period={period} span={span} days={days} goals={goals} overrides={overrides} cutoff={cutoff} expired={expired} changed={changed} setStatus={setStatus} />}
+    </>}
+    {!ready && activeTypes.length > 0 && <div className="panel insights-empty">{loadError ? `读取工作量失败：${loadError}` : "正在读取工作量…"}</div>}
     <p className="insights-footnote">已完成量由你按天填写；工作时长自动读取关联的打卡分类。不同单位单独比较，不合并为总分。</p>
   </section>;
+}
+
+function WorkOverview({ type, period, span, days, goals, cutoff, selected, onSelect }: { type: WorkType; period: Period; span: Span; days: WorkDay[]; goals: CycleGoal[]; cutoff: string; selected: boolean; onSelect: () => void }) {
+  const today = todayDate();
+  const dates = span.dates.filter((date) => date >= cutoff);
+  const actual = dates.filter((date) => date <= today).reduce((sum, date) => sum + (matchDay(days, type.id, date)?.output ?? 0), 0);
+  const minutes = dates.filter((date) => date <= today).reduce((sum, date) => sum + (matchDay(days, type.id, date)?.minutes ?? 0), 0);
+  const missing = dates.filter((date) => date <= today && (matchDay(days, type.id, date)?.minutes ?? 0) > 0 && matchDay(days, type.id, date)?.output == null).length;
+  const goal = period === "cycle" ? goals.find((item) => item.workTypeId === type.id && item.cycleStart === span.start) : undefined;
+  const hasAnyGoal = period !== "cycle" && dates.some((date) => !!matchGoal(goals, type.id, date));
+  const completePlan = period !== "cycle" && dates.length > 0 && dates.every((date) => !!matchGoal(goals, type.id, date));
+  const target = period === "cycle" ? goal?.target : completePlan ? dates.reduce((sum, date) => sum + (matchDay(days, type.id, date)?.planned ?? 0), 0) : undefined;
+  const incomplete = span.start < cutoff;
+  const progress = !incomplete && target && target > 0 ? actual / target * 100 : null;
+  return <button type="button" className={`performance-overview-card${selected ? " selected" : ""}`} style={{ borderLeftColor: type.color }} aria-pressed={selected} onClick={onSelect}>
+    <span className="performance-overview-title"><i className="performance-dot" style={{ background: type.color }} /><strong>{type.name}</strong><small>{selected ? "收起详情" : "查看详情"}</small></span>
+    <span className="performance-overview-value"><strong>{quantity(actual, type.decimals)} {type.unit}</strong><small>{target === undefined ? hasAnyGoal ? "部分日期未设目标" : "未设目标" : target === 0 ? "休息日" : `/ ${quantity(target, period === "cycle" ? type.decimals : 2)} ${type.unit}`}</small></span>
+    <span className="performance-overview-track"><i style={{ width: `${Math.min(100, progress ?? 0)}%`, background: type.color }} /></span>
+    <span className="performance-overview-meta">{incomplete ? "历史统计不完整" : progress === null ? "可查看完成量" : `完成 ${quantity(progress, 1)}%`}{` · 投入 ${formatDuration(minutes)}`}{missing > 0 ? ` · ${missing} 天待填写` : ""}</span>
+  </button>;
 }
 
 function WorkReport({ type, period, span, days, goals, overrides, cutoff, expired, changed, setStatus }: { type: WorkType; period: Period; span: Span; days: WorkDay[]; goals: CycleGoal[]; overrides: WorkDayOverride[]; cutoff: string; expired: boolean; changed: () => void; setStatus: (message: string) => void }) {
@@ -89,8 +125,10 @@ function WorkReport({ type, period, span, days, goals, overrides, cutoff, expire
     {period === "cycle" && cycleGoal && !expired && <p className="performance-pace">周期完成率 {quantity(actual / cycleGoal.target * 100, 1)}%；{remaining === 0 ? "已完成周期目标" : futureWeight ? `剩余计划工作日平均每正常日需完成 ${quantity((remaining ?? 0) / futureWeight, 2)} ${type.unit}，半天约一半。` : "没有剩余计划工作日，请调整后续安排。"}</p>}
     {period === "day" ? <DayEditor type={type} date={span.start} days={days} goals={goals} overrides={overrides} cutoff={cutoff} changed={changed} setStatus={setStatus} /> : <>
       <CumulativeTrend type={type} rows={records} cutoff={cutoff} />
-      <div className="performance-day-list">{records.map((row) => { const unavailable = row.date < cutoff; const future = row.date > today; const rest = dayFactor(type, row.date, row.override) === 0 && !row.override?.customTarget; const value = row.data?.output; const plan = row.data?.planned; return <div className="performance-day-row" key={row.date}><span>{row.date.slice(5)}</span><span>{unavailable ? "已超期" : future ? "未到日期" : rest ? "休息" : value === null || value === undefined ? "未填写" : plan === null || plan === undefined ? "未设目标" : value >= plan ? "已达标" : "未达标"}</span><span>{unavailable ? "—" : value === null || value === undefined ? "—" : `${quantity(value, type.decimals)} ${type.unit}`}</span><span>计划 {plan === null || plan === undefined ? "—" : `${quantity(plan, 2)} ${type.unit}`}</span><button onClick={() => { document.getElementById(`performance-day-${type.id}`)?.scrollIntoView({ behavior: "smooth" }); window.dispatchEvent(new CustomEvent("performance-select-day", { detail: row.date })); }}>查看 / 填写</button></div>; })}</div>
-      <div id={`performance-day-${type.id}`}><DayEditor type={type} date={span.start} days={days} goals={goals} overrides={overrides} cutoff={cutoff} changed={changed} setStatus={setStatus} selectable={span.dates} /></div>
+      <details className="performance-daily-details"><summary><strong>每日明细与填写</strong><span>已记录 {records.filter((row) => row.date >= cutoff && row.date <= today && row.data?.output != null).length} 天 · 点击展开</span></summary>
+        <div className="performance-daily-content"><div className="performance-day-list">{records.map((row) => { const unavailable = row.date < cutoff; const future = row.date > today; const rest = dayFactor(type, row.date, row.override) === 0 && !row.override?.customTarget; const value = row.data?.output; const plan = row.data?.planned; return <div className="performance-day-row" key={row.date}><span>{row.date.slice(5)}</span><span>{unavailable ? "已超期" : future ? "未到日期" : rest ? "休息" : value === null || value === undefined ? "未填写" : plan === null || plan === undefined ? "未设目标" : value >= plan ? "已达标" : "未达标"}</span><span>{unavailable ? "—" : value === null || value === undefined ? "—" : `${quantity(value, type.decimals)} ${type.unit}`}</span><span>计划 {plan === null || plan === undefined ? "—" : `${quantity(plan, 2)} ${type.unit}`}</span><button onClick={() => { document.getElementById(`performance-day-${type.id}`)?.scrollIntoView({ behavior: "smooth" }); window.dispatchEvent(new CustomEvent("performance-select-day", { detail: row.date })); }}>查看 / 填写</button></div>; })}</div>
+        <div id={`performance-day-${type.id}`}><DayEditor type={type} date={span.start} days={days} goals={goals} overrides={overrides} cutoff={cutoff} changed={changed} setStatus={setStatus} selectable={span.dates} /></div></div>
+      </details>
     </>}
   </div>;
 }
@@ -124,8 +162,8 @@ function CumulativeTrend({ type, rows, cutoff }: { type: WorkType; rows: Array<{
   let actual = 0, planned = 0;
   const points = rows.map((row, index) => { if (row.date >= cutoff && row.date <= todayDate()) actual += row.data?.output ?? 0; if (row.date >= cutoff) planned += row.data?.planned ?? 0; return { x: 48 + index * 810 / Math.max(1, rows.length - 1), actual, planned, date: row.date, available: row.date >= cutoff && row.date <= todayDate() }; });
   const max = Math.max(1, ...points.map((point) => Math.max(point.actual, point.planned)));
-  const y = (value: number) => 220 - value / max * 180;
+  const y = (value: number) => 158 - value / max * 124;
   const actualLine = points.filter((point) => point.available).map((point) => `${point.x},${y(point.actual)}`).join(" ");
   const planLine = points.filter((point) => point.date >= cutoff).map((point) => `${point.x},${y(point.planned)}`).join(" ");
-  return <div className="performance-chart"><div className="performance-chart-legend"><span><i style={{ background: type.color }} />累计已完成</span><span><i style={{ background: "#94a3b8" }} />累计计划</span></div><svg viewBox="0 0 900 250" role="img" aria-label={`${type.name}累计已完成量与累计计划量走势`}><line x1="48" y1="220" x2="858" y2="220" stroke="#cbd5e1" /><line x1="48" y1="40" x2="48" y2="220" stroke="#cbd5e1" /><text x="40" y="45" textAnchor="end" fontSize="11" fill="#64748b">{quantity(max, type.decimals)}</text><text x="40" y="222" textAnchor="end" fontSize="11" fill="#64748b">0</text>{planLine && <polyline points={planLine} fill="none" stroke="#94a3b8" strokeWidth="2.5" strokeDasharray="6 4" />}{actualLine && <polyline points={actualLine} fill="none" stroke={type.color} strokeWidth="3" />}{points.map((point, index) => index === 0 || index === points.length - 1 || rows.length <= 7 || index % 5 === 0 ? <text key={point.date} x={point.x} y="242" textAnchor="middle" fontSize="10" fill="#64748b">{point.date.slice(5)}</text> : null)}</svg></div>;
+  return <div className="performance-chart"><div className="performance-chart-legend"><span><i style={{ background: type.color }} />累计已完成</span><span><i style={{ background: "#94a3b8" }} />累计计划</span></div><svg viewBox="0 0 900 190" role="img" aria-label={`${type.name}累计已完成量与累计计划量走势`}><line x1="48" y1="158" x2="858" y2="158" stroke="#cbd5e1" /><line x1="48" y1="34" x2="48" y2="158" stroke="#cbd5e1" /><text x="40" y="38" textAnchor="end" fontSize="11" fill="#64748b">{quantity(max, type.decimals)}</text><text x="40" y="160" textAnchor="end" fontSize="11" fill="#64748b">0</text>{planLine && <polyline points={planLine} fill="none" stroke="#94a3b8" strokeWidth="2.5" strokeDasharray="6 4" />}{actualLine && <polyline points={actualLine} fill="none" stroke={type.color} strokeWidth="3" />}{points.map((point, index) => index === 0 || index === points.length - 1 || rows.length <= 7 || index % 5 === 0 ? <text key={point.date} x={point.x} y="182" textAnchor="middle" fontSize="10" fill="#64748b">{point.date.slice(5)}</text> : null)}</svg></div>;
 }

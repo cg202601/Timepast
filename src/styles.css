@@ -1337,8 +1337,20 @@ body.note-window-page .desktop-note.collapsed .desktop-note-toolbar {
 .dashboard-mode { display: flex; gap: 6px; margin-bottom: 14px; padding: 4px; border-radius: 10px; background: #edf2f8; width: fit-content; }
 .dashboard-mode button { border: 0; background: transparent; }
 .dashboard-mode button.active { background: #dbeafe; color: #1d4ed8; font-weight: 700; }
-.performance-view { display: grid; gap: 14px; }
-.performance-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.performance-view { display: grid; gap: 12px; }
+.performance-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 16px; }
+.performance-overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 235px), 1fr)); gap: 10px; }
+.performance-overview-card { display: grid; justify-items: stretch; align-content: start; gap: 8px; min-width: 0; text-align: left; padding: 13px 14px; border-left-width: 4px; }
+.performance-overview-card.selected { border-top-color: #93c5fd; border-right-color: #93c5fd; border-bottom-color: #93c5fd; box-shadow: 0 5px 18px rgba(37, 99, 235, 0.10); }
+.performance-overview-title, .performance-overview-value { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.performance-overview-title { align-items: center; }
+.performance-overview-title strong, .performance-overview-value strong { min-width: 0; overflow-wrap: anywhere; }
+.performance-overview-title small { margin-left: auto; white-space: nowrap; color: #64748b; }
+.performance-overview-value strong { font-size: 20px; line-height: 1.2; }
+.performance-overview-value small, .performance-overview-meta { color: #64748b; font-size: 12px; }
+.performance-overview-track { display: block; height: 6px; overflow: hidden; border-radius: 99px; background: #e2e8f0; }
+.performance-overview-track i { display: block; height: 100%; border-radius: inherit; }
+.performance-overview-meta { overflow-wrap: anywhere; }
 .performance-settings, .performance-editor, .performance-report { display: grid; gap: 14px; min-width: 0; }
 .performance-setting-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 12px; }
 .performance-setting-grid label, .performance-week-grid label, .performance-goal-edit label, .performance-day-editor > label { display: grid; gap: 5px; font-size: 12px; color: #647084; }
@@ -1356,20 +1368,28 @@ body.note-window-page .desktop-note.collapsed .desktop-note-toolbar {
 .performance-choice-list input { flex: none; }
 .performance-week-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 115px), 1fr)); gap: 8px; margin-top: 8px; }
 .performance-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.performance-report .panel-head { align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+.performance-report { gap: 12px; padding: 16px; }
+.performance-report .panel-head { align-items: flex-start; gap: 10px; flex-wrap: wrap; margin-bottom: 0; }
 .performance-report h2 { display: flex; align-items: center; gap: 7px; }
 .performance-goal-edit { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; }
 .performance-goal-edit input { width: 120px; }
-.performance-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
-.performance-metrics > div { display: grid; align-content: start; gap: 4px; padding: 12px; border-radius: 8px; background: #f1f5f9; }
+.performance-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
+.performance-metrics > div { display: grid; align-content: start; gap: 4px; padding: 10px; border-radius: 8px; background: #f1f5f9; }
 .performance-metrics span, .performance-metrics small { color: #647084; font-size: 12px; }
-.performance-metrics strong { font-size: 18px; overflow-wrap: anywhere; }
+.performance-metrics strong { font-size: 16px; overflow-wrap: anywhere; }
 .performance-pace { margin: 0; color: #334155; font-size: 13px; }
 .performance-chart { overflow-x: auto; }
-.performance-chart svg { display: block; width: 100%; min-width: 500px; }
+.performance-chart svg { display: block; width: 100%; min-width: 360px; }
 .performance-chart-legend { display: flex; gap: 15px; font-size: 12px; color: #647084; }
 .performance-chart-legend span { display: inline-flex; align-items: center; gap: 5px; }
-.performance-day-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 5px; max-height: 260px; overflow-y: auto; }
+.performance-daily-details { min-width: 0; border-top: 1px solid #e2e8f0; padding-top: 10px; }
+.performance-daily-details summary { display: flex; align-items: center; gap: 10px; cursor: pointer; list-style: none; }
+.performance-daily-details summary::-webkit-details-marker { display: none; }
+.performance-daily-details summary span { color: #64748b; font-size: 12px; }
+.performance-daily-details summary::after { content: "⌄"; margin-left: auto; color: #64748b; }
+.performance-daily-details[open] summary::after { transform: rotate(180deg); }
+.performance-daily-content { display: grid; gap: 12px; min-width: 0; margin-top: 12px; }
+.performance-day-list { display: grid; grid-template-columns: 1fr; gap: 5px; max-height: 220px; overflow-y: auto; min-width: 0; }
 .performance-day-row { display: grid; grid-template-columns: 42px 52px 1fr 1fr auto; align-items: center; gap: 5px; padding: 5px; border-bottom: 1px solid #e2e8f0; color: #475569; font-size: 11px; }
 .performance-day-row button { padding: 3px 5px; font-size: 11px; }
 .performance-day-editor { display: grid; gap: 10px; padding: 14px; border: 1px solid #e2e8f0; border-radius: 8px; }
@@ -1378,9 +1398,19 @@ body.note-window-page .desktop-note.collapsed .desktop-note-toolbar {
 .app[data-theme="night"] .settings-tabs { background: #334155; }
 .app[data-theme="night"] .settings-tabs button.active { background: #1e40af; color: #fff; }
 .app[data-theme="night"] .performance-setting-grid label, .app[data-theme="night"] .performance-week-grid label, .app[data-theme="night"] .performance-type-row span { color: #cbd5e1; }
+.app[data-theme="night"] button.performance-overview-card { background: #2a3443; color: #e2e8f0; }
+.app[data-theme="night"] button.performance-overview-card.selected { background: #35445b; border-top-color: #60a5fa; border-right-color: #60a5fa; border-bottom-color: #60a5fa; }
+.app[data-theme="night"] .performance-overview-title small, .app[data-theme="night"] .performance-overview-value small, .app[data-theme="night"] .performance-overview-meta, .app[data-theme="night"] .performance-daily-details summary span, .app[data-theme="night"] .performance-pace, .app[data-theme="night"] .performance-day-row { color: #cbd5e1; }
+.app[data-theme="night"] .performance-metrics span, .app[data-theme="night"] .performance-metrics small, .app[data-theme="night"] .performance-chart-legend { color: #cbd5e1; }
+.app[data-theme="night"] .performance-chart text { fill: #94a3b8; }
+.app[data-theme="night"] .performance-overview-track { background: #475569; }
+.app[data-theme="night"] .performance-daily-details, .app[data-theme="night"] .performance-day-row { border-color: #475569; }
+@media (min-width: 1450px) {
+  .performance-daily-content { grid-template-columns: minmax(0, 1.25fr) minmax(330px, 0.75fr); align-items: start; }
+}
 @media (max-width: 760px) {
   .performance-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .settings-events .event-row { display: flex; flex-wrap: wrap; }
   .settings-events .event-row strong, .settings-events .event-row input[aria-label="事件名称"] { flex: 1 1 140px; min-width: 0; }
-  .performance-day-list { grid-template-columns: 1fr; }
+  .performance-overview-value { flex-wrap: wrap; }
 }
