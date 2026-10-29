@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "note",
+  "description": "Desktop note window permissions",
+  "windows": ["note-*"],
+  "permissions": [
+    "core:window:default",
+    "core:event:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-close",
+    "core:window:allow-set-size",
+    "allow-get-note",
+    "allow-save-note",
+    "allow-set-note-always-on-top"
+  ]
+}

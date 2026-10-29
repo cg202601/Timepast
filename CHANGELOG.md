@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.1.15 - 2026-10-29 (test build)
+
+### Fixed
+- Wait for pending app and desktop note saves before closing; keep the app open if a save fails.
+- Sanitize rich text dropped into notes as well as pasted content.
+
+### Security
+- Enable a restrictive desktop content security policy and separate main and note window permissions.
+- Pin GitHub Actions to audited commit hashes.
+- Include the dependency updates from the preceding security audit.
+
 ## v0.1.11 - 2026-10-29
 
 ### Added

@@ -1,11 +1,12 @@
 {
   "name": "timepast",
   "private": true,
-  "version": "0.1.14",
+  "version": "0.1.15",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "test:save-queue": "node --test tests/saveQueue.test.mjs",
     "preview": "vite preview",
     "tauri": "tauri"
   },

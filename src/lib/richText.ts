@@ -126,3 +126,18 @@ export function insertHtmlAtSelection(editor: HTMLElement, html: string) {
     selection.addRange(range);
   }
 }
+
+export function insertSanitizedDrop(editor: HTMLElement, transfer: DataTransfer, x: number, y: number) {
+  const html = transfer.getData("text/html");
+  const text = transfer.getData("text/plain");
+  if (!html && !text) return false;
+
+  const range = document.caretRangeFromPoint(x, y);
+  if (range && editor.contains(range.commonAncestorContainer)) {
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  }
+  insertHtmlAtSelection(editor, sanitizeClipboardHtml(html, text));
+  return true;
+}

@@ -294,6 +294,7 @@ async function fallback<T>(command: string, args?: Record<string, unknown>): Pro
     case "open_note_window":
     case "set_note_always_on_top":
     case "set_autostart":
+    case "exit_app":
       return undefined as T;
     default:
       throw new Error(`Unsupported fallback command: ${command}`);
@@ -335,7 +336,8 @@ export const api = {
     call<void>("save_window_geometry", { name, x, y, width, height }),
   setNoteAlwaysOnTop: (noteId: number, onTop: boolean) =>
     call<void>("set_note_always_on_top", { noteId, onTop }),
-  setAutostart: (enabled: boolean) => call<void>("set_autostart", { enabled })
+  setAutostart: (enabled: boolean) => call<void>("set_autostart", { enabled }),
+  exitApp: () => call<void>("exit_app")
 };
 
 

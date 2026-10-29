@@ -11,8 +11,10 @@ import { PerformanceSettingsPanel } from "./features/performance/PerformanceSett
 import { useActiveTimer } from "./hooks/useActiveTimer";
 import { useAppData } from "./hooks/useAppData";
 import { api } from "./lib/api";
+import { flushDesktopNotes } from "./lib/exitCoordinator";
+import { appNoteQueue, flushAppNotes, removeAppNoteQueue } from "./lib/noteSaveQueue";
 import { isAppNoteCollapsed, noteTitle, withAppNoteCollapsed, withNoteTitle } from "./lib/noteMeta";
-import { insertHtmlAtSelection, normalizeStoredRichText, sanitizeClipboardHtml } from "./lib/richText";
+import { insertHtmlAtSelection, insertSanitizedDrop, normalizeStoredRichText, sanitizeClipboardHtml } from "./lib/richText";
 import { finishActiveTimer } from "./lib/timerActions";
 import { currentTime, isoToTimeInput, normalizeDateInput, todayDate } from "./lib/time";
 import type { ActiveTimer, EventType, ShortcutAction, ShortcutStatus, StickyNote as Note, TimeEntry, TimeEntryInput, ViewKey } from "./lib/types";
@@ -49,6 +51,24 @@ function App() {
   eventTypesRef.current = eventTypes;
   const shortcutBusyRef = useRef(false);
   const savingTimerRef = useRef(false);
+  const exitBusyRef = useRef(false);
+  useEffect(() => {
+    const pending = listen("app-close-requested", async () => {
+      if (exitBusyRef.current) return;
+      exitBusyRef.current = true;
+      setStatus("正在保存便签...");
+      try {
+        await flushAppNotes();
+        await flushDesktopNotes();
+        await api.exitApp();
+      } catch (error) {
+        setStatus(`退出已取消，便签未能全部保存：${String(error)}`);
+        exitBusyRef.current = false;
+        await getCurrentWindow().show().catch(() => undefined);
+      }
+    });
+    return () => { pending.then((off) => off()).catch(() => undefined); };
+  }, []);
   useEffect(() => {
     let cancelled = false;
     api.setWindowMode(mini ? "mini" : "full")
@@ -176,11 +196,40 @@ function NotesView({ notes, refresh, createNote, setStatus }: { notes: Note[]; r
 function NoteCard({ note, refresh, setStatus }: { note: Note; refresh: () => Promise<void>; setStatus: (value: string) => void }) {
   const editorRef = useRef<HTMLDivElement>(null);
   const savedRangeRef = useRef<Range | null>(null);
-  const timerRef = useRef<number | null>(null);
   const localRef = useRef(note);
   const editingRef = useRef(false);
+  const deletingRef = useRef(false);
   const [fontColor, setFontColor] = useState("#273244");
   const [title, setTitle] = useState(() => noteTitle(note));
+  const titleRef = useRef(title);
+  titleRef.current = title;
+  const queue = appNoteQueue(note.id);
+  useEffect(() => {
+    queue.onSaved = () => setStatus("便签已保存");
+    queue.onError = (error) => setStatus(`便签保存失败：${String(error)}`);
+    queue.prepareFlush = () => {
+      const current = localRef.current;
+      const content = editorRef.current?.innerHTML ?? current.content;
+      const title = titleRef.current;
+      if (content === current.content && title === noteTitle(current)) return;
+      const next = {
+        ...current,
+        content,
+        styleJson: withNoteTitle(current, title)
+      };
+      localRef.current = next;
+      queue.schedule(next, 0);
+    };
+    return () => {
+      if (!deletingRef.current) {
+        queue.prepareFlush?.();
+        void queue.flush().catch(() => undefined);
+      }
+      queue.prepareFlush = undefined;
+      queue.onSaved = undefined;
+      queue.onError = undefined;
+    };
+  }, [queue, setStatus]);
   useEffect(() => {
     localRef.current = note;
     setTitle(noteTitle(note));
@@ -191,10 +240,8 @@ function NoteCard({ note, refresh, setStatus }: { note: Note; refresh: () => Pro
   const persist = (patch: Partial<Note>, delay = 420) => {
     const next = { ...localRef.current, ...patch };
     localRef.current = next;
-    if (timerRef.current) window.clearTimeout(timerRef.current);
-    timerRef.current = window.setTimeout(() => api.saveNote(next).then(() => setStatus("便签已保存")).catch((error) => setStatus(String(error))), delay);
+    queue.schedule(next, delay);
   };
-  useEffect(() => () => { if (timerRef.current) window.clearTimeout(timerRef.current); }, []);
   const rangeIsInEditor = (range: Range) => !!editorRef.current && editorRef.current.contains(range.commonAncestorContainer);
   const rememberSelection = () => {
     const selection = window.getSelection();
@@ -230,6 +277,15 @@ function NoteCard({ note, refresh, setStatus }: { note: Note; refresh: () => Pro
     rememberSelection();
     persist({ content: editor.innerHTML }, 0);
   };
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const editor = editorRef.current;
+    if (!editor) return;
+    if (insertSanitizedDrop(editor, event.dataTransfer, event.clientX, event.clientY)) {
+      rememberSelection();
+      persist({ content: editor.innerHTML }, 0);
+    }
+  };
   const addTodoLine = () => { const editor = editorRef.current; if (!editor) return; editor.focus(); editor.insertAdjacentHTML("beforeend", '<div class="todo-line"><span class="todo-check" contenteditable="false"></span><span>待办</span></div>'); persist({ content: editor.innerHTML }, 0); };
   const handleTodoBackspace = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "Backspace") return;
@@ -243,7 +299,7 @@ function NoteCard({ note, refresh, setStatus }: { note: Note; refresh: () => Pro
     line.remove();
     persist({ content: editorRef.current?.innerHTML || "" }, 0);
   };
-  return <article className="sticky" style={{ background: note.color, width: note.width, minHeight: isAppNoteCollapsed(note) ? 112 : note.height }}><div className="sticky-head"><label className="sticky-title-wrap"><input value={title} onChange={(event) => setTitle(event.target.value)} onBlur={() => persist({ styleJson: withNoteTitle(localRef.current, title) }, 0)} placeholder="便签名称" aria-label="便签名称" /></label><div className="sticky-actions"><button onClick={() => persist({ pinned: !note.pinned }, 0)} title="置顶"><Pin size={15} className={note.pinned ? "filled" : ""} /></button><button onClick={() => persist({ styleJson: withAppNoteCollapsed(note, !isAppNoteCollapsed(note)) }, 0)} title="收缩应用内便签"><ChevronDown size={15} /></button><button onClick={() => api.openNoteWindow(note.id).then(() => setStatus("桌面便签已打开"))} title="打开桌面窗口"><Maximize2 size={15} /></button><button onClick={async () => { await api.deleteNote(note.id); await refresh(); }} title="删除"><Trash2 size={15} /></button></div></div>{!isAppNoteCollapsed(note) && <><div ref={editorRef} className="sticky-editor rich-editor" contentEditable suppressContentEditableWarning data-placeholder="点击这里编辑便签" style={{ fontSize: note.fontSize }} onFocus={() => { editingRef.current = true; }} onBlur={() => { editingRef.current = false; persist({ content: editorRef.current?.innerHTML || "" }); }} onKeyDown={handleTodoBackspace} onPaste={handlePaste} onMouseUp={rememberSelection} onKeyUp={rememberSelection} onInput={() => persist({ content: editorRef.current?.innerHTML || "" })} onClick={(event) => { const check = (event.target as HTMLElement).closest(".todo-check"); if (check) { check.classList.toggle("checked"); persist({ content: editorRef.current?.innerHTML || "" }, 0); } }} /><div className="sticky-tools">{noteColors.map((color) => <button key={color} className="swatch" style={{ background: color }} onClick={() => persist({ color }, 0)} />)}<button onClick={() => persist({ fontSize: Math.max(12, note.fontSize - 1) }, 0)}>A-</button><button onClick={() => persist({ fontSize: Math.min(24, note.fontSize + 1) }, 0)}>A+</button><button onMouseDown={preserve} onClick={() => format("bold")} title="加粗">B</button><button onMouseDown={preserve} onClick={() => format("hiliteColor", "#fff59d")} title="标注"><Edit3 size={14} /></button><label className="font-color" title="字体颜色"><Palette size={14} /><input type="color" value={fontColor} onMouseDown={preserve} onChange={(event) => { setFontColor(event.target.value); format("foreColor", event.target.value); }} /></label><button onMouseDown={preserve} onClick={addTodoLine} title="另起一行添加待办"><Check size={14} /></button></div></>}</article>;
+  return <article className="sticky" style={{ background: note.color, width: note.width, minHeight: isAppNoteCollapsed(note) ? 112 : note.height }}><div className="sticky-head"><label className="sticky-title-wrap"><input value={title} onChange={(event) => setTitle(event.target.value)} onBlur={() => persist({ styleJson: withNoteTitle(localRef.current, title) }, 0)} placeholder="便签名称" aria-label="便签名称" /></label><div className="sticky-actions"><button onClick={() => persist({ pinned: !note.pinned }, 0)} title="置顶"><Pin size={15} className={note.pinned ? "filled" : ""} /></button><button onClick={() => persist({ styleJson: withAppNoteCollapsed(note, !isAppNoteCollapsed(note)) }, 0)} title="收缩应用内便签"><ChevronDown size={15} /></button><button onClick={() => api.openNoteWindow(note.id).then(() => setStatus("桌面便签已打开"))} title="打开桌面窗口"><Maximize2 size={15} /></button><button onClick={async () => { deletingRef.current = true; try { await removeAppNoteQueue(note.id); await api.deleteNote(note.id); await refresh(); } catch (error) { deletingRef.current = false; setStatus(String(error)); } }} title="删除"><Trash2 size={15} /></button></div></div>{!isAppNoteCollapsed(note) && <><div ref={editorRef} className="sticky-editor rich-editor" contentEditable suppressContentEditableWarning data-placeholder="点击这里编辑便签" style={{ fontSize: note.fontSize }} onFocus={() => { editingRef.current = true; }} onBlur={() => { editingRef.current = false; persist({ content: editorRef.current?.innerHTML || "" }); }} onKeyDown={handleTodoBackspace} onPaste={handlePaste} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }} onDrop={handleDrop} onMouseUp={rememberSelection} onKeyUp={rememberSelection} onInput={() => persist({ content: editorRef.current?.innerHTML || "" })} onClick={(event) => { const check = (event.target as HTMLElement).closest(".todo-check"); if (check) { check.classList.toggle("checked"); persist({ content: editorRef.current?.innerHTML || "" }, 0); } }} /><div className="sticky-tools">{noteColors.map((color) => <button key={color} className="swatch" style={{ background: color }} onClick={() => persist({ color }, 0)} />)}<button onClick={() => persist({ fontSize: Math.max(12, note.fontSize - 1) }, 0)}>A-</button><button onClick={() => persist({ fontSize: Math.min(24, note.fontSize + 1) }, 0)}>A+</button><button onMouseDown={preserve} onClick={() => format("bold")} title="加粗">B</button><button onMouseDown={preserve} onClick={() => format("hiliteColor", "#fff59d")} title="标注"><Edit3 size={14} /></button><label className="font-color" title="字体颜色"><Palette size={14} /><input type="color" value={fontColor} onMouseDown={preserve} onChange={(event) => { setFontColor(event.target.value); format("foreColor", event.target.value); }} /></label><button onMouseDown={preserve} onClick={addTodoLine} title="另起一行添加待办"><Check size={14} /></button></div></>}</article>;
 }
 
 

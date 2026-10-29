@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { emit, listen } from "@tauri-apps/api/event";
+import { emit, emitTo, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { Bold, CheckSquare, ChevronDown, ChevronUp, Highlighter, Minus, Palette, Pin, Plus, Type, X } from "lucide-react";
 import { api } from "./lib/api";
 import { isDesktopNoteCollapsed, noteTitle, withNoteTitle, writeNoteMeta } from "./lib/noteMeta";
-import { insertHtmlAtSelection, normalizeStoredRichText, sanitizeClipboardHtml } from "./lib/richText";
+import { NoteSaveQueue } from "./lib/noteSaveQueue";
+import { insertHtmlAtSelection, insertSanitizedDrop, normalizeStoredRichText, sanitizeClipboardHtml } from "./lib/richText";
 import type { StickyNote as NoteType } from "./lib/types";
 import "./styles.css";
 
@@ -30,11 +31,26 @@ function NoteWindow() {
   const [title, setTitle] = useState("便签");
   const [editingTitle, setEditingTitle] = useState(false);
   const [desktopCollapsed, setDesktopCollapsed] = useState(false);
-  const saveTimerRef = useRef<number | undefined>(undefined);
   const editorRef = useRef<HTMLDivElement>(null);
   const savedRangeRef = useRef<Range | null>(null);
   const ignoreNextSyncRef = useRef(false);
   const latestNoteRef = useRef<NoteType | null>(null);
+  const titleRef = useRef(title);
+  titleRef.current = title;
+  const closingRef = useRef(false);
+  const allowCloseRef = useRef(false);
+  const saveQueueRef = useRef<NoteSaveQueue<NoteType> | null>(null);
+  if (!saveQueueRef.current) {
+    saveQueueRef.current = new NoteSaveQueue<NoteType>(async (next) => {
+      ignoreNextSyncRef.current = true;
+      try {
+        await api.saveNote(next);
+      } catch (error) {
+        ignoreNextSyncRef.current = false;
+        throw error;
+      }
+    });
+  }
 
   function rangeIsInEditor(range: Range) {
     const editor = editorRef.current;
@@ -74,18 +90,25 @@ function NoteWindow() {
   function schedulePersist(next: NoteType, statusDelay = 360) {
     latestNoteRef.current = next;
     setSaveStatus("保存中");
-    if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = window.setTimeout(async () => {
-      try {
-        ignoreNextSyncRef.current = true;
-        await api.saveNote(next);
-        setSaveStatus("已保存");
-        window.setTimeout(() => setSaveStatus(""), 800);
-      } catch {
-        ignoreNextSyncRef.current = false;
-        setSaveStatus("保存失败");
+    saveQueueRef.current!.schedule(next, statusDelay);
+  }
+
+  async function flushCurrentNote() {
+    const current = latestNoteRef.current;
+    if (current) {
+      const content = editorRef.current?.innerHTML ?? current.content;
+      const title = titleRef.current;
+      if (content !== current.content || title !== noteTitle(current)) {
+        const next = {
+          ...current,
+          content,
+          styleJson: withNoteTitle(current, title)
+        };
+        latestNoteRef.current = next;
+        saveQueueRef.current!.schedule(next, 0);
       }
-    }, statusDelay);
+    }
+    await saveQueueRef.current!.flush();
   }
 
   async function applyLoadedNote(found: NoteType) {
@@ -137,8 +160,28 @@ function NoteWindow() {
   }, [noteId]);
 
   useEffect(() => {
+    const queue = saveQueueRef.current!;
+    queue.onSaved = () => {
+      setSaveStatus("已保存");
+      window.setTimeout(() => setSaveStatus(""), 800);
+    };
+    queue.onError = () => setSaveStatus("保存失败");
+    const closeListener = getCurrentWindow().onCloseRequested((event) => {
+      if (allowCloseRef.current) return;
+      event.preventDefault();
+      void closeWindow();
+    });
+    const flushListener = listen<{ token: string }>("note-flush-request", async ({ payload }) => {
+      try {
+        await flushCurrentNote();
+        await emitTo("main", "note-flush-result", { token: payload.token, label: getCurrentWindow().label });
+      } catch (error) {
+        await emitTo("main", "note-flush-result", { token: payload.token, label: getCurrentWindow().label, error: String(error) });
+      }
+    });
     return () => {
-      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+      closeListener.then((off) => off()).catch(() => undefined);
+      flushListener.then((off) => off()).catch(() => undefined);
     };
   }, []);
 
@@ -200,6 +243,16 @@ function NoteWindow() {
     saveEditorContent();
   }
 
+  function handleDrop(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const editor = editorRef.current;
+    if (!editor) return;
+    if (insertSanitizedDrop(editor, event.dataTransfer, event.clientX, event.clientY)) {
+      rememberSelection();
+      saveEditorContent();
+    }
+  }
+
   async function togglePin() {
     const current = latestNoteRef.current;
     if (!current) return;
@@ -224,14 +277,18 @@ function NoteWindow() {
   }
 
   async function closeWindow() {
-    if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
-    const current = latestNoteRef.current;
-    if (current) {
-      const next = { ...current, content: editorRef.current?.innerHTML ?? current.content };
-      ignoreNextSyncRef.current = true;
-      await api.saveNote(next).catch(() => undefined);
+    if (closingRef.current) return;
+    closingRef.current = true;
+    setSaveStatus("保存中");
+    try {
+      await flushCurrentNote();
+      allowCloseRef.current = true;
+      await getCurrentWindow().close();
+    } catch (error) {
+      allowCloseRef.current = false;
+      closingRef.current = false;
+      setSaveStatus(`保存失败：${String(error)}`);
     }
-    await getCurrentWindow().close().catch(() => window.close());
   }
 
   function insertTodoCheck() {
@@ -304,6 +361,8 @@ function NoteWindow() {
         onBlur={saveEditorContent}
         onClick={handleEditorClick}
         onPaste={handlePaste}
+        onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }}
+        onDrop={handleDrop}
         onMouseUp={rememberSelection}
         onKeyUp={rememberSelection}
         onKeyDown={handleEditorKeyDown}

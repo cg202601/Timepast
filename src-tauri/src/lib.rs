@@ -588,6 +588,11 @@ fn set_autostart(enabled: bool) -> Result<(), AppError> {
     if !output.status.success() && enabled { return Err(AppError::Invalid("unable to update Windows startup setting".into())); }
     Ok(())
 }
+
+#[tauri::command]
+fn exit_app(app: AppHandle) {
+    app.exit(0);
+}
 fn geometry_path(app: &AppHandle, name: &str) -> Result<PathBuf, AppError> {
     if name != "mini-window" {
         return Err(AppError::Invalid("unsupported window geometry target".to_string()));
@@ -818,7 +823,13 @@ fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                     let _ = window.set_focus();
                 }
             }
-            "quit" => app.exit(0),
+            "quit" => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.emit("app-close-requested", ());
+                } else {
+                    app.exit(0);
+                }
+            }
             _ => {}
         })
         .build(app)?;
@@ -828,8 +839,11 @@ fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 pub fn run() {
     tauri::Builder::default()
         .on_window_event(|window, event| {
-            if matches!(event, WindowEvent::CloseRequested { .. }) && window.label() == "main" {
-                window.app_handle().exit(0);
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" {
+                    api.prevent_close();
+                    let _ = window.emit("app-close-requested", ());
+                }
             }
         })
         .setup(|app| {
@@ -892,6 +906,7 @@ pub fn run() {
             save_note,
             delete_note,
             set_autostart,
+            exit_app,
             save_window_geometry,
             set_main_window_mode,
             open_note_window,
