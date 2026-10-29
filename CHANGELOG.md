@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.2.0 - 2026-10-29
+
+### Added
+- Add configurable work types with output units, linked time-entry categories, daily output, and monthly cycle goals.
+- Show daily work efficiency, weekly plans and trends, and cycle progress against cumulative targets.
+- Support custom monthly cycle start days, weekly work schedules, and one-off daily adjustments.
+- Let users retain the complete current cycle or 1–365 days of time entries, with separate 31/90/180/365-day daily summaries.
+
+### Improved
+- Organize settings into tabs and make the work dashboard more compact for multiple projects.
+- Preserve an older 30-day retention setting as complete-cycle retention when upgrading.
+
+### Security and reliability
+- Limit desktop note windows to their own note, restrict Tauri window permissions, and add a content security policy.
+- Sanitize dragged rich text, save pending notes before exit, and keep the app open when saving fails.
+- Patch audited dependencies and pin GitHub Actions to commit hashes.
+
 ## v0.1.15 - 2026-10-29 (test build)
 
 ### Fixed
