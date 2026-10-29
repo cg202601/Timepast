@@ -12,7 +12,7 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{
     AppHandle, Emitter, Listener, LogicalSize, Manager, PhysicalPosition,
-    Position, Size, State, WindowEvent,
+    Position, Size, State, WebviewWindow, WindowEvent,
 };
 use thiserror::Error;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
@@ -518,7 +518,8 @@ fn list_notes(db: State<Db>) -> Result<Vec<Note>, AppError> {
 
 
 #[tauri::command]
-fn get_note(db: State<Db>, id: i64) -> Result<Note, AppError> {
+fn get_note(window: WebviewWindow, db: State<Db>, id: i64) -> Result<Note, AppError> {
+    authorize_note_window(window.label(), Some(id))?;
     with_conn(&db, |conn| {
         conn.query_row(
             "SELECT id, content, color, x, y, width, height, collapsed, pinned, font_size, style_json, created_at, updated_at FROM notes WHERE id = ?1",
@@ -544,8 +545,17 @@ fn get_note(db: State<Db>, id: i64) -> Result<Note, AppError> {
         .map_err(AppError::Db)
     })
 }
+fn authorize_note_window(label: &str, note_id: Option<i64>) -> Result<(), AppError> {
+    if label == "main" || note_id.is_some_and(|id| id > 0 && label == format!("note-{id}")) {
+        Ok(())
+    } else {
+        Err(AppError::Invalid("this window cannot access the requested note".into()))
+    }
+}
+
 #[tauri::command]
-fn save_note(app: AppHandle, db: State<Db>, note: NoteInput) -> Result<i64, AppError> {
+fn save_note(app: AppHandle, window: WebviewWindow, db: State<Db>, note: NoteInput) -> Result<i64, AppError> {
+    authorize_note_window(window.label(), note.id)?;
     let id = with_conn(&db, |conn| {
         let timestamp = now();
         if note.id.unwrap_or(0) == 0 {
@@ -789,7 +799,8 @@ async fn open_note_window(app: AppHandle, db: State<'_, Db>, note_id: i64) -> Re
 
 /// Toggle always-on-top for an open desktop note window.
 #[tauri::command]
-async fn set_note_always_on_top(app: AppHandle, note_id: i64, on_top: bool) -> Result<(), AppError> {
+async fn set_note_always_on_top(app: AppHandle, window: WebviewWindow, note_id: i64, on_top: bool) -> Result<(), AppError> {
+    authorize_note_window(window.label(), Some(note_id))?;
     let label = format!("note-{}", note_id);
     if let Some(window) = app.get_webview_window(&label) {
         window
@@ -932,6 +943,16 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn desktop_note_window_can_access_only_its_own_note() {
+        assert!(authorize_note_window("main", None).is_ok());
+        assert!(authorize_note_window("main", Some(7)).is_ok());
+        assert!(authorize_note_window("note-7", Some(7)).is_ok());
+        assert!(authorize_note_window("note-7", Some(8)).is_err());
+        assert!(authorize_note_window("note-7", None).is_err());
+        assert!(authorize_note_window("note-7", Some(0)).is_err());
+    }
 
     #[test]
     fn shortcut_parser_normalizes_and_rejects_unsafe_combinations() {
