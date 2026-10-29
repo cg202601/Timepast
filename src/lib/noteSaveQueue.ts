@@ -22,8 +22,6 @@ export async function flushAppNotes() {
   }));
 }
 
-export async function removeAppNoteQueue(id: number) {
-  const queue = appNoteQueues.get(id);
-  if (queue) await queue.flush();
+export function removeAppNoteQueue(id: number) {
   appNoteQueues.delete(id);
 }
