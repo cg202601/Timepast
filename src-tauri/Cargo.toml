@@ -1,6 +1,6 @@
 [package]
 name = "timepast"
-version = "0.2.0"
+version = "0.2.1"
 description = "Local-first time entries and notes"
 authors = ["TimePast"]
 edition = "2021"

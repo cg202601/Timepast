@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.1 - 2026-10-29 (test build)
+
+### Fixed
+- Keep the daily work-detail panel open and preserve its scroll position after saving output or a day plan.
+
 ## v0.2.0 - 2026-10-29
 
 ### Added

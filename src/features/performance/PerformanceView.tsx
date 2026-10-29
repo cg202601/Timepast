@@ -48,10 +48,9 @@ export function PerformanceView({ setStatus }: { setStatus: (message: string) =>
   useEffect(() => {
     if (!span) return;
     let cancelled = false;
-    setLoadedKey("");
     setLoadError("");
     Promise.all([api.listCycleGoals(span.start, span.end), api.listWorkDays(span.start, span.end), api.listWorkDayOverrides(span.start, span.end)])
-      .then(([g, d, o]) => { if (!cancelled) { setGoals(g); setDays(d); setOverrides(o); setLoadedKey(`${span.start}/${span.end}/${revision}`); } })
+      .then(([g, d, o]) => { if (!cancelled) { setGoals(g); setDays(d); setOverrides(o); setLoadedKey(`${span.start}/${span.end}`); } })
       .catch((error) => { if (!cancelled) { setLoadError(String(error)); setStatus(`读取工作量记录失败：${String(error)}`); } });
     return () => { cancelled = true; };
   }, [span?.start, span?.end, revision]);
@@ -68,7 +67,7 @@ export function PerformanceView({ setStatus }: { setStatus: (message: string) =>
   const label = period === "day" ? span.start : `${span.start} — ${span.end}`;
   const activeTypes = types.filter((item) => !item.archived);
   const selectedType = activeTypes.find((item) => item.id === selectedTypeId);
-  const ready = loadedKey === `${span.start}/${span.end}/${revision}`;
+  const ready = loadedKey === `${span.start}/${span.end}`;
   return <section className="performance-view">
     <div className="panel performance-toolbar"><div className="insights-tabs">{(["day", "week", "cycle"] as const).map((value) => <button key={value} className={period === value ? "active" : ""} onClick={() => setPeriod(value)}>{value === "day" ? "日" : value === "week" ? "周" : "业绩周期"}</button>)}</div><div className="insights-navigate"><button onClick={() => move(-1)}>上一段</button><strong>{label}</strong><button onClick={() => move(1)} disabled={span.end >= todayDate()}>下一段</button><label className="insights-date">跳转日期<input type="date" value={anchor} onChange={(event) => setAnchor(event.target.value)} /></label><button onClick={() => setAnchor(todayDate())}>回到今天</button></div></div>
     {expired && <p className="performance-warning">部分日期已超出工作量汇总保留期，历史统计不完整；缺失日期不按零产出计算。</p>}
@@ -77,6 +76,7 @@ export function PerformanceView({ setStatus }: { setStatus: (message: string) =>
       <div className="performance-overview-grid" aria-label="工作项目概览">{activeTypes.map((type) => <WorkOverview key={type.id} type={type} period={period} span={span} days={days} goals={goals} cutoff={cutoff} selected={selectedTypeId === type.id} onSelect={() => setSelectedTypeId(selectedTypeId === type.id ? null : type.id)} />)}</div>
       {selectedType && <WorkReport key={selectedType.id} type={selectedType} period={period} span={span} days={days} goals={goals} overrides={overrides} cutoff={cutoff} expired={expired} changed={changed} setStatus={setStatus} />}
     </>}
+    {ready && loadError && <p className="performance-warning">刷新工作量失败，当前显示的是上次读取的数据：{loadError}</p>}
     {!ready && activeTypes.length > 0 && <div className="panel insights-empty">{loadError ? `读取工作量失败：${loadError}` : "正在读取工作量…"}</div>}
     <p className="insights-footnote">已完成量由你按天填写；工作时长自动读取关联的打卡分类。不同单位单独比较，不合并为总分。</p>
   </section>;
